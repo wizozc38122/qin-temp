@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>📖 Kong API 快速指引</h2>
+<p>這是一份供您在 Qin Kong UI 中快速建立 JSON Payload 的參考手冊。請複製以下 JSON 結構並在「建立」或「編輯」區域中使用。</p>
+
+<div style="display:flex; flex-wrap:wrap; gap:1rem; margin-top:1.5rem;">
+    <!-- Service -->
+    <div class="card">
+        <h3>📦 1. Service (服務出口)</h3>
+        <p style="font-size:0.9em; color:#aaa;">定義後端目標應用程式。可以直接用 `url` 簡寫，或是拆分 `host`, `port`, `path`。</p>
+        <pre><code class="language-json">{
+  "name": "payment-api",
+  "url": "http://internal-payment.local:8080/api",
+  "retries": 5,
+  "connect_timeout": 60000,
+  "write_timeout": 60000,
+  "read_timeout": 60000
+}</code></pre>
+    </div>
+
+    <!-- Route -->
+    <div class="card">
+        <h3>🛤️ 2. Route (路由入口)</h3>
+        <p style="font-size:0.9em; color:#aaa;">定義外部如何存取 Service。最常用 `paths` 或 `hosts` 進行分流。</p>
+        <pre><code class="language-json">{
+  "name": "payment-route",
+  "paths": ["/v1/pay"],
+  "methods": ["GET", "POST"],
+  "strip_path": true,
+  "preserve_host": false
+}</code></pre>
+        <div class="info-box" style="margin-top:0.5rem; padding:0.4rem;">
+            <strong>strip_path</strong>: 若為 true，轉發到 Service 時會去掉 <code>/v1/pay</code>。
+        </div>
+    </div>
+</div>
+
+<div style="display:flex; flex-wrap:wrap; gap:1rem; margin-top:1rem;">
+    <!-- Plugin -->
+    <div class="card">
+        <h3>🔌 3. Plugin (擴充套件)</h3>
+        <p style="font-size:0.9em; color:#aaa;">在 Service 或 Route 上加上功能。例如：Rate Limiting (限流)。</p>
+        <pre><code class="language-json">{
+  "name": "rate-limiting",
+  "config": {
+    "minute": 20,
+    "hour": 500,
+    "policy": "local"
+  }
+}</code></pre>
+        <p style="font-size:0.85em; color:#5dade2;">⚠️ 註：目前 UI 的「一鍵建立」區僅限 Service/Route，Plugin 請透過 Kong Admin API 直連呼叫。</p>
+    </div>
+
+    <!-- Upstream -->
+    <div class="card">
+        <h3>⚖️ 4. Upstream & Target (負載均衡)</h3>
+        <p style="font-size:0.9em; color:#aaa;">取代單一的 Service URL，建立一個 Upstream 群組以實現 Load Balancing。</p>
+        <pre><code class="language-json">// 1. 建立 Upstream
+{
+  "name": "payment-upstream"
+}
+
+// 2. 新增 Target (節點)
+{
+  "target": "192.168.1.10:8000",
+  "weight": 100
+}</code></pre>
+        <p style="font-size:0.85em; color:#5dade2;">建立 Upstream 後，Service 的 `host` 即可填寫 `payment-upstream`。</p>
+    </div>
+</div>
+
+<div style="margin-top:2rem; padding-top:1rem; border-top:1px solid #333;">
+    <h3>🔗 官方資源</h3>
+    <ul>
+        <li><a href="https://docs.konghq.com/gateway/latest/admin-api/" target="_blank">Kong Admin API 官方文件 ↗</a></li>
+    </ul>
+</div>
+{% endblock %}

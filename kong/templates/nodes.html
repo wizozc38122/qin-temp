@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>🌐 Kong 節點管理</h2>
+<p>在此新增、編輯、移除 Kong 節點。所有設定儲存在本地 SQLite 中。</p>
+
+<div class="card">
+    <h3>➕ 註冊新節點</h3>
+    <form action="/nodes/add" method="post" style="display:flex; gap:1rem; align-items:flex-end; flex-wrap:wrap;">
+        <label style="margin:0;"><strong>名稱:</strong><br>
+            <input type="text" name="name" required placeholder="例: Kong-Production" style="margin:0; min-width:200px;"></label>
+        <label style="margin:0;"><strong>Admin API URL:</strong><br>
+            <input type="text" name="url" required placeholder="http://localhost:8001" style="margin:0; min-width:320px;"></label>
+        <button type="submit" style="margin:0;">✅ 新增</button>
+    </form>
+</div>
+
+<h3>已註冊的節點</h3>
+{% if nodes %}
+<table>
+    <thead><tr><th>名稱</th><th>Admin URL</th><th>狀態</th><th>Kong 版本</th><th>註冊時間</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for n in nodes %}
+    <tr>
+        <td><strong>{{ n.name }}</strong></td>
+        <td class="mono">{{ n.url }}</td>
+        <td>{% if results[n.name].ok %}<span class="badge badge-ok">✅ 正常</span>{% else %}<span class="badge badge-err">❌ 離線</span>{% endif %}</td>
+        <td>{{ results[n.name].version }}</td>
+        <td>{{ n.created_at }}</td>
+        <td style="white-space:nowrap;">
+            <button class="btn-fill" title="編輯節點" onclick="showEdit('edit-{{ loop.index }}')">✏️ 編輯</button>
+            <form action="/nodes/delete" method="post" style="margin:0; display:inline;">
+                <input type="hidden" name="name" value="{{ n.name }}">
+                <button type="submit" class="btn-danger" title="移除節點" onclick="return confirm('移除「{{ n.name }}」？')">🗑️ 移除</button>
+            </form>
+            <div id="edit-{{ loop.index }}" class="delete-confirm">
+                <form action="/nodes/edit" method="post" style="margin:0;">
+                    <input type="hidden" name="old_name" value="{{ n.name }}">
+                    <label><strong>名稱:</strong> <input type="text" name="name" value="{{ n.name }}" required style="min-width:180px;"></label>
+                    <label><strong>URL:</strong> <input type="text" name="url" value="{{ n.url }}" required style="min-width:300px;"></label>
+                    <button type="submit" class="btn-fill" style="margin-top:0.3rem;">💾 儲存</button>
+                    <button type="button" onclick="hideEdit('edit-{{ loop.index }}')" style="margin-top:0.3rem;">❌ 取消</button>
+                </form>
+            </div>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="info-box">尚未註冊任何節點。請在上方新增。</div>
+{% endif %}
+
+<script>
+function showEdit(id) { document.getElementById(id).classList.add('show'); }
+function hideEdit(id) { document.getElementById(id).classList.remove('show'); }
+</script>
+{% endblock %}

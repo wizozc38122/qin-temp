@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>📋 操作紀錄</h2>
+<p style="margin-bottom: 0.5rem;">所有透過此 UI 執行的變更皆被記錄，包含完整 API 參數與回應，可供稽核與復原。</p>
+
+<!-- 搜尋與篩選列 -->
+<form action="/history" method="get" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem;">
+    <label style="margin: 0;">
+        <strong>分類:</strong>
+        <select name="category" onchange="this.form.submit()" style="margin: 0;">
+            {% for cat in categories %}
+            <option value="{{ cat }}" {% if cat == current_category %}selected{% endif %}>
+                {% if cat == 'ALL' %}全部{% elif cat == 'CREATE' %}✅ 建立{% elif cat == 'DELETE' %}🗑️ 刪除{% elif cat == 'BACKUP' %}💾 備份{% else %}📌 其他{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+    </label>
+    <label style="margin: 0;">
+        <strong>搜尋:</strong>
+        <input type="text" name="search" value="{{ current_search }}" placeholder="關鍵字（名稱、URL、節點…）" style="margin: 0; min-width: 250px;">
+    </label>
+    <button type="submit" style="margin: 0;">🔍 搜尋</button>
+    <a href="/history" style="font-size: 0.9em;">清除篩選</a>
+</form>
+<form action="/history/clear" method="post" style="display:inline; margin:0;">
+    <button type="submit" class="btn-danger" onclick="return confirm('⚠️ 確定清除所有操作紀錄？此操作不可復原！')" style="margin: 0;">🗑️ 一鍵清除全部紀錄</button>
+</form>
+
+<p style="color: var(--text-light); font-size: 0.85em;">共 {{ operations | length }} 筆紀錄</p>
+
+{% for op in operations %}
+<div class="card" style="padding: 0.8rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.3rem;">
+        <div>
+            <span class="badge {% if op.category == 'CREATE' %}badge-ok{% elif op.category == 'DELETE' %}badge-err{% else %}{% endif %}" style="{% if op.category == 'BACKUP' %}background:#d9edf7;color:#31708f{% endif %}">{{ op.category }}</span>
+            <strong>{{ op.action }}</strong>
+            {% if op.resource_name %}<span class="mono"> — {{ op.resource_type }}: {{ op.resource_name }}</span>{% endif %}
+        </div>
+        <div style="font-size: 0.85em; color: var(--text-light);">
+            🕐 {{ op.timestamp }} | 🌐 {{ op.node or 'N/A' }}
+            <span class="{{ 'success' if op.response_status < 400 else 'danger' }}">HTTP {{ op.response_status }}</span>
+        </div>
+    </div>
+    <p style="margin: 0.3rem 0 0.2rem;" class="mono"><strong>{{ op.method }}</strong> {{ op.url }}</p>
+
+    <details>
+        <summary>📤 請求 Payload</summary>
+        <pre>{{ op.payload_fmt }}</pre>
+    </details>
+    <details>
+        <summary>📥 回應結果</summary>
+        <pre>{{ op.response_fmt }}</pre>
+    </details>
+</div>
+{% else %}
+<div class="info-box">尚無操作紀錄。</div>
+{% endfor %}
+{% endblock %}

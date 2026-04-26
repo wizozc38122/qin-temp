@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>🔀 節點比對 (A ↔ B)</h2>
+<p>並排比較兩個 Kong 節點的 Service 與 Route 設定，快速找出差異。</p>
+
+<form action="/compare" method="get" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;">
+    <label style="margin: 0;"><strong>節點 A:</strong>
+        <select name="a" style="margin: 0;">
+            {% for name in nodes.keys() %}
+            <option value="{{ name }}" {% if name == a %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label style="margin: 0;"><strong>節點 B:</strong>
+        <select name="b" style="margin: 0;">
+            {% for name in nodes.keys() %}
+            <option value="{{ name }}" {% if name == b %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <button type="submit" style="margin: 0;">🔍 比對</button>
+</form>
+
+<div class="flex">
+    {% for label in ["a", "b"] %}
+    <div class="card">
+        <h3>{{ data[label].name }}
+            {% if data[label].error %}<span class="badge badge-err">Error</span>{% endif %}
+        </h3>
+        {% if data[label].error %}
+        <pre class="danger">{{ data[label].error }}</pre>
+        {% else %}
+        <h4>Services ({{ data[label].services | length }})</h4>
+        <table style="font-size: 0.85em;">
+            <thead><tr><th>Name</th><th>Host</th><th>Port</th><th>Path</th></tr></thead>
+            <tbody>
+            {% for s in data[label].services %}
+            <tr>
+                <td><strong>{{ s.name or '-' }}</strong></td>
+                <td class="mono">{{ s.host }}</td>
+                <td>{{ s.port }}</td>
+                <td class="mono">{{ s.path or '/' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4">無</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        <h4>Routes ({{ data[label].routes | length }})</h4>
+        <table style="font-size: 0.85em;">
+            <thead><tr><th>Name</th><th>Paths</th><th>Methods</th><th>Service</th></tr></thead>
+            <tbody>
+            {% for r in data[label].routes %}
+            <tr>
+                <td><strong>{{ r.name or '-' }}</strong></td>
+                <td class="mono">{{ r.paths | join(', ') if r.paths else '-' }}</td>
+                <td>{{ r.methods | join(', ') if r.methods else 'ALL' }}</td>
+                <td class="mono" style="font-size:0.8em;">{% if r.service %}{{ r.service.id[:12] }}…{% else %}N/A{% endif %}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4">無</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

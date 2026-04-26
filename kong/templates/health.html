@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>💓 節點健康檢查</h2>
+<p>即時檢查所有已設定的 Kong 節點狀態。</p>
+
+{% for name, r in results.items() %}
+<div class="card">
+    <h3>
+        {% if r.ok %}
+        <span class="badge badge-ok">✅ 正常</span>
+        {% else %}
+        <span class="badge badge-err">❌ 異常</span>
+        {% endif %}
+        {{ name }} <small class="mono">({{ r.url }})</small>
+    </h3>
+    {% if r.ok and r.data %}
+    <div style="overflow-x: auto;">
+        <table style="font-size: 0.85em;">
+            <tr><th style="width:200px;">Database</th><td>{{ r.data.database.reachable if r.data.database else 'N/A' }}</td></tr>
+            <tr><th>Memory (workers_lua_vms)</th><td>
+                {% if r.data.memory and r.data.memory.workers_lua_vms %}
+                    {% for vm in r.data.memory.workers_lua_vms %}
+                    PID {{ vm.pid }}: {{ vm.http_allocated_gc }} |
+                    {% endfor %}
+                {% else %}N/A{% endif %}
+            </td></tr>
+            <tr><th>Server Connections</th><td>
+                {% if r.data.server %}
+                    Active: {{ r.data.server.connections_active }},
+                    Accepted: {{ r.data.server.connections_accepted }},
+                    Handled: {{ r.data.server.connections_handled }},
+                    Reading: {{ r.data.server.connections_reading }},
+                    Writing: {{ r.data.server.connections_writing }},
+                    Waiting: {{ r.data.server.connections_waiting }}
+                {% else %}N/A{% endif %}
+            </td></tr>
+        </table>
+    </div>
+    {% elif not r.ok %}
+    <pre style="color: #d9534f;">{{ r.data }}</pre>
+    {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

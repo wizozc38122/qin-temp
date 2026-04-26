@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- ═══ 即時訊息 ═══ -->
+{% if msg %}
+<div class="{{ 'success-box' if msg_type == 'success' else ('error-box' if msg_type == 'error' else 'info-box') }}">
+    {{ msg }}
+</div>
+{% endif %}
+
+<!-- ═══ 頂部控制列 ═══ -->
+<div class="node-bar">
+    <form action="/" method="get" style="margin:0; display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+        <label style="margin:0; white-space:nowrap;"><strong>🌐 節點:</strong></label>
+        <select name="node" onchange="this.form.submit()" style="margin:0;">
+            {% for name in nodes.keys() %}
+            <option value="{{ name }}" {% if name == current_node %}selected{% endif %}>{{ name }} ({{ nodes[name] }})</option>
+            {% endfor %}
+        </select>
+        <span style="margin-left:0.8rem;"><strong>🔀 比較:</strong></span>
+        <select name="diff_with" style="margin:0;">
+            <option value="">— 不比較 —</option>
+            {% for name in nodes.keys() %}
+                {% if name != current_node %}
+                <option value="{{ name }}" {% if name == diff_with %}selected{% endif %}>{{ name }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+        <button type="submit" style="margin:0;">🔍 查看 / 比較</button>
+    </form>
+    <div style="display:flex; gap:0.5rem; align-items:center;">
+        {% if kong_info %}<span class="mono">Kong {{ kong_info.version }}</span>{% endif %}
+        <a href="/export?node={{ current_node }}" target="_blank" style="font-size:0.85em;">📥 匯出 JSON</a>
+    </div>
+</div>
+
+{% if error_msg %}<div class="error-box"><strong>⚠️</strong> {{ error_msg }}</div>{% endif %}
+
+<!-- ═══════════════ 差異比對 ═══════════════ -->
+{% if diff_data %}
+<div style="border:2px solid #2980b9; border-radius:6px; padding:1rem; margin-bottom:1.5rem; background:#0d1b2a;">
+    <h2 style="margin-top:0; border:none;">🔀 差異: {{ current_node }} ↔ {{ diff_data.b_name }}</h2>
+    <p class="mono">相同 Service: {{ diff_data.common_svc }} | 相同 Route: {{ diff_data.common_rt }}</p>
+
+    {% macro diff_svc_table(items, src_name, tgt_name) %}
+    {% if items %}
+    <table><thead><tr><th>Name</th><th>Host:Port</th><th>Path</th><th>Routes</th><th>操作</th></tr></thead><tbody>
+    {% for s in items %}
+    <tr>
+        <td><strong>{{ s.name }}</strong></td>
+        <td class="mono">{{ s.host }}:{{ s.port }}</td>
+        <td class="mono">{{ s.path or '/' }}</td>
+        <td>{{ s._routes | length if s._routes else 0 }}</td>
+        <td style="white-space:nowrap;">
+            <form action="/service/clone-with-routes" method="post" style="margin:0; display:inline;">
+                <input type="hidden" name="target_node" value="{{ tgt_name }}">
+                <input type="hidden" name="raw_json" value="{{ s | tojson | forceescape }}">
+                <button type="submit" class="btn-clone" onclick="return confirm('Clone Service「{{ s.name }}」+ {{ s._routes | length if s._routes else 0 }} Routes 到 {{ tgt_name }}？')">📋 Clone (含 Routes)</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody></table>
+    {% else %}<p style="color:#777;">無差異</p>{% endif %}
+    {% endmacro %}
+
+    <h3><span class="success">{{ current_node }}</span> 有，<span class="danger">{{ diff_data.b_name }}</span> 沒有 — Service ({{ diff_data.only_a_svc | length }})</h3>
+    {{ diff_svc_table(diff_data.only_a_svc, current_node, diff_data.b_name) }}
+
+    <h3><span class="success">{{ diff_data.b_name }}</span> 有，<span class="danger">{{ current_node }}</span> 沒有 — Service ({{ diff_data.only_b_svc | length }})</h3>
+    {{ diff_svc_table(diff_data.only_b_svc, diff_data.b_name, current_node) }}
+
+    {% if not diff_data.only_a_svc and not diff_data.only_b_svc and not diff_data.only_a_rt and not diff_data.only_b_rt %}
+    <div class="info-box">🎉 兩個節點完全一致，無差異！</div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- ═══════════════ Services ═══════════════ -->
+<div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 0.5rem;">
+    <h2 style="margin:0;">📦 Services ({{ services | length }}) — {{ current_node }}</h2>
+    <input type="text" id="tableSearch" placeholder="🔍 搜尋名稱、Host、Path..." onkeyup="filterTable()" style="width:350px; padding:0.4rem; border-radius:6px; border:1px solid #5dade2; background: rgba(0,0,0,0.3); color:#fff;">
+</div>
+
+<div style="overflow-x:auto;">
+    <table id="servicesTable">
+        <thead><tr>
+            <th>Name</th><th>Protocol</th><th>Host</th><th>Port</th><th>Path</th>
+            <th>Retries</th><th>Timeout (C/W/R)</th><th>Tags</th><th>On</th><th>Routes</th><th>操作</th>
+        </tr></thead>
+        <tbody>
+        {% for s in services %}
+        {% set search_text = (s.name or '') ~ ' ' ~ (s.host or '') ~ ' ' ~ (s.path or '') %}
+        {% for r in s._routes %}{% set search_text = search_text ~ ' ' ~ (r.name or '') ~ ' ' ~ (r.paths|join(' ') if r.paths else '') %}{% endfor %}
+        <tr class="svc-row" data-search="{{ search_text | lower }}">
+            <td><strong>{{ s.name or '-' }}</strong></td>
+            <td>{{ s.protocol }}</td>
+            <td class="mono">{{ s.host }}</td>
+            <td>{{ s.port }}</td>
+            <td class="mono">{{ s.path or '/' }}</td>
+            <td>{{ s.retries }}</td>
+            <td class="mono" style="font-size:0.78em;">{{ s.connect_timeout }}/{{ s.write_timeout }}/{{ s.read_timeout }}</td>
+            <td>{{ s.tags | join(', ') if s.tags else '-' }}</td>
+            <td>{{ '✅' if s.enabled else '❌' }}</td>
+            <td>
+                {% if s._routes %}<a href="javascript:void(0)" onclick="toggleRoutes('sr-{{ loop.index }}')">📂 {{ s._routes | length }}</a>{% else %}0{% endif %}
+            </td>
+            <td style="white-space:nowrap;">
+                <form action="/service/clone-with-routes" method="post" style="display:inline-flex; gap:2px; margin:0;">
+                    <input type="hidden" name="raw_json" value="{{ s | tojson | forceescape }}">
+                    <select name="target_node" title="選擇要複製到哪個節點" style="margin:0; padding:0.1rem; font-size:0.75em;" {% if nodes | length <= 1 %}disabled{% endif %}>
+                        {% for name in nodes.keys() %}
+                            {% if name != current_node %}
+                            <option value="{{ name }}">→ {{ name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn-clone" title="複製 Service + Routes 到目標節點" onclick="return confirm('複製「{{ s.name }}」(含 Routes) 到所選節點？')" {% if nodes | length <= 1 %}disabled{% endif %}>📋 複製</button>
+                </form>
+                <button class="btn-fill" title="帶入 JSON 到建立區編輯" onclick='fillJson(`{{ s | tojson | forceescape }}`, "service")'>📝 帶入</button>
+                <button class="btn-fill" title="編輯此 Service 設定" onclick='editResource("service", "{{ s.id }}", `{{ s | tojson | forceescape }}`)' style="background:#8e44ad;">✏️ 編輯</button>
+                <button class="btn-danger" title="刪除此 Service" onclick="showDel('ds-{{ loop.index }}')">🗑️ 刪除</button>
+                <div id="ds-{{ loop.index }}" class="delete-confirm">
+                    <small class="danger">⚠️ 刪除 <strong>{{ s.name }}</strong>？</small><br>
+                    <form action="/service/delete" method="post" style="margin:0; display:inline;">
+                        <input type="hidden" name="target_node" value="{{ current_node }}">
+                        <input type="hidden" name="service_id" value="{{ s.id }}">
+                        <input type="hidden" name="confirm" value="YES">
+                        <input type="hidden" name="force" value="no">
+                        <button type="submit" class="btn-danger" style="margin-top:0.2rem;">🗑️ 僅刪 Service</button>
+                    </form>
+                    <form action="/service/delete" method="post" style="margin:0; display:inline;">
+                        <input type="hidden" name="target_node" value="{{ current_node }}">
+                        <input type="hidden" name="service_id" value="{{ s.id }}">
+                        <input type="hidden" name="confirm" value="YES">
+                        <input type="hidden" name="force" value="yes">
+                        <button type="submit" class="btn-force" style="margin-top:0.2rem;" onclick="return confirm('🔥 將先刪除所有 Routes 再刪除 Service，確定？')">🔥 強制刪除 (含 Routes)</button>
+                    </form>
+                    <button type="button" onclick="hideDel('ds-{{ loop.index }}')" style="margin-top:0.2rem;">❌ 取消</button>
+                </div>
+            </td>
+        </tr>
+        {% if s._routes %}
+        {% set svc_idx = loop.index %}
+        <tr id="sr-{{ svc_idx }}" class="sub-routes" style="display:none;">
+            <td colspan="11" style="padding-left:1.5rem; background:#0d1b2a;">
+                <strong>🛤️ Routes:</strong>
+                <table style="font-size:0.83em; margin:0.3rem 0;">
+                    <thead><tr><th>Name</th><th>Paths</th><th>Methods</th><th>Protocols</th><th>Strip</th><th>操作</th></tr></thead>
+                    <tbody>
+                    {% for r in s._routes %}
+                    <tr>
+                        <td><strong>{{ r.name or '-' }}</strong></td>
+                        <td class="mono">{{ r.paths | join(', ') if r.paths else '-' }}</td>
+                        <td>{{ r.methods | join(', ') if r.methods else 'ALL' }}</td>
+                        <td>{{ r.protocols | join(', ') if r.protocols else '-' }}</td>
+                        <td>{{ '✅' if r.strip_path else '❌' }}</td>
+                        <td style="white-space:nowrap;">
+                            <button class="btn-fill" title="帶入 JSON 到建立區" onclick='fillJson(`{{ r | tojson | forceescape }}`, "route")'>📝 帶入</button>
+                            <button class="btn-fill" title="編輯此 Route 設定" onclick='editResource("route", "{{ r.id }}", `{{ r | tojson | forceescape }}`)' style="background:#8e44ad;">✏️ 編輯</button>
+                            <button class="btn-danger" title="刪除此 Route" onclick="showDel('dr-{{ svc_idx }}-{{ loop.index }}')">🗑️ 刪除</button>
+                            <div id="dr-{{ svc_idx }}-{{ loop.index }}" class="delete-confirm">
+                                <form action="/route/delete" method="post" style="margin:0;">
+                                    <input type="hidden" name="target_node" value="{{ current_node }}">
+                                    <input type="hidden" name="route_id" value="{{ r.id }}">
+                                    <input type="hidden" name="confirm" value="YES">
+                                    <small class="danger">刪除 Route「{{ r.name }}」？</small><br>
+                                    <button type="submit" class="btn-danger">✅ 確認</button>
+                                    <button type="button" onclick="hideDel('dr-{{ svc_idx }}-{{ loop.index }}')">❌ 取消</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </td>
+        </tr>
+        {% endif %}
+        {% else %}
+        <tr><td colspan="11">目前沒有 Service</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<hr>
+
+<!-- ═══════════════ JSON 建立區 ═══════════════ -->
+<h2>✏️ JSON 快速建立</h2>
+<div class="flex">
+    <div class="card">
+        <h3>📦 建立 Service</h3>
+        <form action="/service/create" method="post">
+            <p><label><strong>目標節點:</strong>
+                <select name="target_node">{% for name in nodes.keys() %}<option value="{{ name }}" {% if name == current_node %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+            </label></p>
+            <textarea name="raw_json" rows="8" id="svc_json" placeholder='{"name":"my-svc","url":"http://example.com"}'></textarea>
+            <button type="submit">🚀 送出</button>
+        </form>
+    </div>
+    <div class="card">
+        <h3>🛤️ 建立 Route</h3>
+        <form action="/route/create" method="post">
+            <p><label><strong>目標節點:</strong>
+                <select name="target_node">{% for name in nodes.keys() %}<option value="{{ name }}" {% if name == current_node %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+            </label></p>
+            <p><label><strong>Service ID:</strong> <input type="text" name="service_id" id="rt_sid" placeholder="選填" class="mono"></label></p>
+            <textarea name="raw_json" rows="8" id="rt_json" placeholder='{"name":"my-route","paths":["/api/v1"]}'></textarea>
+            <button type="submit">🚀 送出</button>
+        </form>
+    </div>
+</div>
+
+<!-- ═══ 編輯 Modal ═══ -->
+<div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:100; justify-content:center; align-items:center;">
+    <div style="background:#1a1a2e; border:1px solid #333; border-radius:8px; padding:1.5rem; width:700px; max-width:90%; max-height:80vh; overflow-y:auto;">
+        <h3 id="editTitle" style="margin-top:0;">✏️ 編輯</h3>
+        <form id="editForm" method="post">
+            <input type="hidden" name="target_node" value="{{ current_node }}">
+            <input type="hidden" name="service_id" id="editSvcId">
+            <input type="hidden" name="route_id" id="editRtId">
+            <textarea name="raw_json" id="editJsonArea" rows="18" style="width:100%; font-family:monospace; font-size:0.88em;"></textarea>
+            <div style="margin-top:0.8rem; display:flex; gap:0.5rem;">
+                <button type="submit" class="btn-fill" style="padding:0.4rem 1rem;">💾 儲存 (PATCH)</button>
+                <button type="button" onclick="closeEdit()" style="padding:0.4rem 1rem;">❌ 取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function fillJson(jsonStr, type) {
+    try {
+        const d = JSON.parse(jsonStr);
+        delete d.id; delete d.created_at; delete d.updated_at; delete d._routes;
+        if (type === 'service') {
+            document.getElementById('svc_json').value = JSON.stringify(d, null, 2);
+            document.getElementById('svc_json').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+            if (d.service && d.service.id) { document.getElementById('rt_sid').value = d.service.id; delete d.service; }
+            document.getElementById('rt_json').value = JSON.stringify(d, null, 2);
+            document.getElementById('rt_json').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    } catch(e) { alert('JSON 解析失敗: ' + e); }
+}
+function showDel(id) { document.getElementById(id).classList.add('show'); }
+function hideDel(id) { document.getElementById(id).classList.remove('show'); }
+function toggleRoutes(id) { const el = document.getElementById(id); el.style.display = el.style.display === 'none' ? '' : 'none'; }
+
+function editResource(type, id, jsonStr) {
+    const modal = document.getElementById('editModal');
+    const form = document.getElementById('editForm');
+    const title = document.getElementById('editTitle');
+    const area = document.getElementById('editJsonArea');
+
+    try {
+        const d = JSON.parse(jsonStr);
+        delete d._routes;
+        area.value = JSON.stringify(d, null, 2);
+    } catch(e) { area.value = jsonStr; }
+
+    if (type === 'service') {
+        form.action = '/service/edit';
+        document.getElementById('editSvcId').value = id;
+        document.getElementById('editRtId').value = '';
+        title.textContent = '✏️ 編輯 Service';
+    } else {
+        form.action = '/route/edit';
+        document.getElementById('editRtId').value = id;
+        document.getElementById('editSvcId').value = '';
+        title.textContent = '✏️ 編輯 Route';
+    }
+    modal.style.display = 'flex';
+}
+function closeEdit() { document.getElementById('editModal').style.display = 'none'; }
+
+// 帶入內容到編輯區
+function fillForm(mode, type, dataStr, targetId) {
+    const data = JSON.parse(dataStr);
+    const textareas = {
+        'post': {'service': 'svc_json', 'route': 'rt_json'},
+        'patch': {'service': 'patch_svc_json', 'route': 'patch_rt_json'}
+    };
+    
+    if (mode === 'patch') {
+        const idInputs = {'service': 'patch_svc_id', 'route': 'patch_rt_id'};
+        document.getElementById(idInputs[type]).value = targetId;
+        document.getElementById('patchModal').style.display = 'block';
+    } else {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }
+    
+    document.getElementById(textareas[mode][type]).value = JSON.stringify(data, null, 2);
+}
+
+// 關閉 Patch Modal
+function closePatchModal() {
+    document.getElementById('patchModal').style.display = 'none';
+}
+
+// 表格即時搜尋過濾
+function filterTable() {
+    const input = document.getElementById('tableSearch').value.toLowerCase().trim();
+    const terms = input.split(/\s+/).filter(t => t);
+    const rows = document.querySelectorAll('.svc-row');
+    
+    rows.forEach(row => {
+        const searchText = row.getAttribute('data-search');
+        const match = terms.length === 0 ? true : terms.every(term => searchText.includes(term));
+        row.style.display = match ? '' : 'none';
+        
+        // 如果這個 Service 隱藏了，也把底下展開的 Route 列表隱藏
+        if (!match) {
+            const nextRow = row.nextElementSibling;
+            if (nextRow && nextRow.id && nextRow.id.startsWith('sr-')) {
+                nextRow.style.display = 'none';
+            }
+        }
+    });
+}
+</script>
+{% endblock %}

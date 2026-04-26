@@ -1,0 +1,64 @@
+version: '3.9'
+
+# ═══════════════════════════════════════════════════════════════
+# Kong-A (Dev/Staging 模擬)
+# Admin API: http://localhost:8001
+# Proxy:     http://localhost:8000
+# ═══════════════════════════════════════════════════════════════
+
+x-kong-env: &kong-env
+  KONG_DATABASE: postgres
+  KONG_PG_HOST: kong-a-db
+  KONG_PG_USER: kong
+  KONG_PG_PASSWORD: kongpass
+  KONG_PASSWORD: test
+
+services:
+  kong-a-migrations:
+    image: kong:3.6.0
+    command: kong migrations bootstrap
+    environment:
+      <<: *kong-env
+    depends_on:
+      kong-a-db:
+        condition: service_healthy
+    restart: "no"
+
+  kong-a-gateway:
+    image: kong:3.6.0
+    container_name: kong-a-gateway
+    environment:
+      <<: *kong-env
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001, 0.0.0.0:8444 ssl
+    ports:
+      - "8000:8000"   # Proxy HTTP
+      - "8443:8443"   # Proxy HTTPS
+      - "8001:8001"   # Admin API HTTP
+      - "8444:8444"   # Admin API HTTPS
+    depends_on:
+      kong-a-migrations:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  kong-a-db:
+    image: postgres:13
+    container_name: kong-a-db
+    environment:
+      POSTGRES_USER: kong
+      POSTGRES_DB: kong
+      POSTGRES_PASSWORD: kongpass
+    volumes:
+      - kong-a-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "kong"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  kong-a-data:

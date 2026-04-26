@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="node-bar">
+    <form action="/topology" method="get" style="margin:0; display:flex; align-items:center; gap:0.6rem;">
+        <label style="margin:0;"><strong>🌐 節點:</strong></label>
+        <select name="node" onchange="this.form.submit()" style="margin:0;">
+            {% for name in nodes.keys() %}
+            <option value="{{ name }}" {% if name == current_node %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    <div style="flex:1; display:flex; justify-content:flex-end;">
+         <input type="text" id="topoSearch" placeholder="🔍 搜尋名稱、Host 或 Path..." onkeyup="handleSearch()" style="width:300px; padding:0.5rem; border-radius:20px;">
+    </div>
+</div>
+
+<h2>🗺️ 互動式拓樸圖 — {{ current_node }}</h2>
+<p>使用滑鼠滾輪縮放，拖動節點調整版面。點擊節點可查看詳細資訊。</p>
+
+{% if error_msg %}
+<div class="error-box">{{ error_msg }}</div>
+{% endif %}
+
+<div class="card" style="padding:0; height:700px; position:relative; overflow:hidden; border:1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2);">
+    <div id="mynetwork" style="width:100%; height:100%;"></div>
+    
+    <!-- 浮動統計 -->
+    <div style="position:absolute; bottom:1rem; right:1rem; background:rgba(11,16,30,0.8); padding:0.8rem; border-radius:8px; border:1px solid rgba(255,255,255,0.1); pointer-events:none; font-size:0.85em;">
+        <div>🔵 Hosts: <span id="stat-hosts">0</span></div>
+        <div>🟢 Services: <span id="stat-services">0</span></div>
+        <div>🟡 Routes: <span id="stat-routes">0</span></div>
+    </div>
+</div>
+
+<script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<script type="text/javascript">
+const servicesData = {{ all_services | tojson | safe }};
+
+let network = null;
+let nodes = new vis.DataSet();
+let edges = new vis.DataSet();
+
+function buildGraph(filter = '') {
+    nodes.clear();
+    edges.clear();
+    const f = filter.toLowerCase().trim();
+    const searchTerms = f.split(/\s+/).filter(t => t);
+
+    let hostCount = 0;
+    let svcCount = 0;
+    let rtCount = 0;
+
+    const hostNodes = new Set();
+    const rtNodes = new Set();
+    const svcNodes = new Set();
+
+    // 中央節點 (Level 0)
+    nodes.add({ id: 'root', label: '🦍 Qin Kong', shape: 'image', image: '/favicon.ico', size: 30, font: { color: '#fff' }, level: 0 });
+
+    servicesData.forEach(svc => {
+        const svcId = `svc-${svc.id}`;
+        const svcLabel = svc.name || 'unnamed-svc';
+        const svcUrl = `${svc.protocol}://${svc.host}:${svc.port}${svc.path || ''}`;
+        
+        const svcSearchText = `${svcLabel} ${svcUrl}`.toLowerCase();
+        
+        // 檢查此 Service 底下的 Routes
+        const relevantRoutes = (svc._routes || []).filter(rt => {
+            const rtSearchText = `${rt.name || ''} ${(rt.paths || []).join(' ')} ${(rt.hosts || []).join(' ')} ${svcSearchText}`.toLowerCase();
+            // 如果搜尋框有字，確保所有 keyword 都符合 (AND 邏輯)
+            if (searchTerms.length > 0) {
+                return searchTerms.every(term => rtSearchText.includes(term));
+            }
+            return true;
+        });
+
+        // 檢查 Service 本身 (如果它沒有 Route，或者即使有 Route，Service 名字有對上)
+        let svcMatches = true;
+        if (searchTerms.length > 0) {
+            svcMatches = searchTerms.every(term => svcSearchText.includes(term));
+        }
+
+        // 如果連 Service 都沒中，且底下也沒有符合的 Route，就跳過渲染
+        if (searchTerms.length > 0 && !svcMatches && relevantRoutes.length === 0) return;
+
+        // 添加 Service 節點 (Level 3)
+        if (!svcNodes.has(svcId)) {
+            nodes.add({
+                id: svcId,
+                label: `📦 ${svcLabel}\n${svcUrl}`,
+                title: `Service Name: ${svcLabel}\nTarget URL: ${svcUrl}\nID: ${svc.id}`,
+                color: { background: '#1e4620', border: '#2ecc71', hover: { background: '#27ae60' } },
+                font: { color: '#2ecc71', size: 14, multi: true },
+                shape: 'box',
+                level: 3
+            });
+            svcNodes.add(svcId);
+            svcCount++;
+        }
+
+        if (relevantRoutes.length === 0) {
+            // 無路由的 Service 直接連到 Root 做警告
+            edges.add({ from: 'root', to: svcId, dashes: true, color: '#e74c3c', label: '孤兒' });
+        } else {
+            relevantRoutes.forEach(rt => {
+                const rtHosts = (rt.hosts && rt.hosts.length > 0) ? rt.hosts : ['* (Any Host)'];
+                
+                rtHosts.forEach(host => {
+                    const hostId = `host-${host}`;
+                    // 添加 Host 節點 (Level 1)
+                    if (!hostNodes.has(hostId)) {
+                        nodes.add({
+                            id: hostId,
+                            label: `🌐\n${host}`,
+                            title: `Domain/Host: ${host}`,
+                            color: { background: '#4e3a1a', border: '#f39c12', hover: { background: '#d35400' } },
+                            font: { color: '#f39c12', size: 16, face: 'monospace' },
+                            shape: 'box',
+                            level: 1
+                        });
+                        edges.add({ from: 'root', to: hostId, color: '#444' });
+                        hostNodes.add(hostId);
+                        hostCount++;
+                    }
+
+                    // 添加 Route(Path) 節點 (Level 2)
+                    const pathLabel = (rt.paths && rt.paths.length > 0) ? rt.paths.join(', ') : '/*';
+                    const rtId = `rt-${rt.id}-${host}`; // 以防不同 host 共用 route
+                    if (!rtNodes.has(rtId)) {
+                        nodes.add({
+                            id: rtId,
+                            label: `🛤️ ${pathLabel}\n(${rt.name || 'unnamed'})`,
+                            title: `Route Name: ${rt.name || 'unnamed'}\nPaths: ${pathLabel}\nID: ${rt.id}`,
+                            color: { background: '#1a3a4e', border: '#5dade2', hover: { background: '#2980b9' } },
+                            font: { color: '#5dade2', size: 13 },
+                            shape: 'box',
+                            level: 2
+                        });
+                        
+                        // Host -> Route
+                        edges.add({
+                            from: hostId,
+                            to: rtId,
+                            arrows: 'to',
+                            color: { color: '#5dade2', highlight: '#fff', hover: '#fff' }
+                        });
+                        rtNodes.add(rtId);
+                        rtCount++;
+                    }
+
+                    // Route -> Service
+                    edges.add({
+                        from: rtId,
+                        to: svcId,
+                        arrows: 'to',
+                        color: { color: '#2ecc71', highlight: '#fff', hover: '#fff' }
+                    });
+                });
+            });
+        }
+    });
+
+    document.getElementById('stat-hosts').textContent = hostCount;
+    document.getElementById('stat-services').textContent = svcCount;
+    document.getElementById('stat-routes').textContent = rtCount;
+
+    if (!network) {
+        const container = document.getElementById('mynetwork');
+        const data = { nodes, edges };
+        const options = {
+            layout: {
+                hierarchical: {
+                    direction: 'LR', // Left to Right
+                    sortMethod: 'directed',
+                    levelSeparation: 350,
+                    nodeSpacing: 80,
+                    treeSpacing: 100,
+                    parentCentralization: true
+                }
+            },
+            nodes: {
+                margin: 12,
+                borderWidth: 2,
+                shadow: { enabled: true, color: 'rgba(0,0,0,0.5)', size: 10 }
+            },
+            edges: {
+                width: 2,
+                hoverWidth: 3,
+                smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.6 }
+            },
+            physics: false, // 階層圖不需要物理引擎，這樣位置才會固定
+            interaction: {
+                hover: true,
+                hoverConnectedEdges: true,
+                tooltipDelay: 100,
+                navigationButtons: true,
+                keyboard: false // 關閉鍵盤控制，避免干擾搜尋框輸入 (如 '-' 號)
+            }
+        };
+        network = new vis.Network(container, data, options);
+    } else {
+        network.setData({ nodes, edges });
+    }
+}
+
+let searchTimeout = null;
+function handleSearch() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        const val = document.getElementById('topoSearch').value;
+        buildGraph(val);
+    }, 300);
+}
+
+buildGraph();
+</script>
+
+<style>
+.vis-network { outline: none; }
+.vis-tooltip {
+    background: #0b101e !important;
+    color: #fff !important;
+    border: 1px solid #5dade2 !important;
+    border-radius: 4px !important;
+    padding: 8px !important;
+    font-family: monospace !important;
+    font-size: 12px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+}
+</style>
+{% endblock %}
