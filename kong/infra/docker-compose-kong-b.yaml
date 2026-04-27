@@ -2,8 +2,8 @@ version: '3.9'
 
 # ═══════════════════════════════════════════════════════════════
 # Kong-B (Production 模擬)
-# Admin API: http://localhost:9001
-# Proxy:     http://localhost:9000
+# Admin API: http://localhost:29001
+# Proxy:     http://localhost:29000
 # ═══════════════════════════════════════════════════════════════
 
 x-kong-env: &kong-env
@@ -35,10 +35,10 @@ services:
       KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_ADMIN_LISTEN: 0.0.0.0:8001, 0.0.0.0:8444 ssl
     ports:
-      - "9000:8000"   # Proxy HTTP  (mapped to 9000)
-      - "9443:8443"   # Proxy HTTPS (mapped to 9443)
-      - "9001:8001"   # Admin API HTTP  (mapped to 9001)
-      - "9444:8444"   # Admin API HTTPS (mapped to 9444)
+      - "29000:8000"   # Proxy HTTP  (mapped to 29000)
+      - "29443:8443"   # Proxy HTTPS (mapped to 29443)
+      - "29001:8001"   # Admin API HTTP  (mapped to 29001)
+      - "29444:8444"   # Admin API HTTPS (mapped to 29444)
     depends_on:
       kong-b-migrations:
         condition: service_completed_successfully

@@ -12,10 +12,10 @@
 ```powershell
 cd infra
 
-# 啟動 Kong-A (Admin: 8001, Proxy: 8000)
+# 啟動 Kong-A (Admin: 28001, Proxy: 28000)
 docker compose -f docker-compose-kong-a.yaml -p kong-a up -d
 
-# 啟動 Kong-B (Admin: 9001, Proxy: 9000)
+# 啟動 Kong-B (Admin: 29001, Proxy: 29000)
 docker compose -f docker-compose-kong-b.yaml -p kong-b up -d
 ```
 
@@ -24,8 +24,8 @@ docker compose -f docker-compose-kong-b.yaml -p kong-b up -d
 ### 驗證節點
 
 ```powershell
-curl http://localhost:8001/status   # Kong-A
-curl http://localhost:9001/status   # Kong-B
+curl http://localhost:28001/status   # Kong-A
+curl http://localhost:29001/status   # Kong-B
 ```
 
 ---
@@ -69,7 +69,7 @@ uv run kong_ui.py
 | 欄位 | Kong-A | Kong-B |
 |------|--------|--------|
 | 名稱 | `Kong-A` | `Kong-B` |
-| URL  | `http://localhost:8001` | `http://localhost:9001` |
+| URL  | `http://localhost:28001` | `http://localhost:29001` |
 
 分別填入並點「✅ 新增」。
 
@@ -137,8 +137,8 @@ kong/
 │   ├── health.html                 # 健康檢查
 │   └── compare.html                # (舊版比對, 保留)
 └── infra/
-    ├── docker-compose-kong-a.yaml  # Kong-A (Port 8001)
-    ├── docker-compose-kong-b.yaml  # Kong-B (Port 9001)
+    ├── docker-compose-kong-a.yaml  # Kong-A (Port 28001)
+    ├── docker-compose-kong-b.yaml  # Kong-B (Port 29001)
     ├── seed_kong_a.py              # Kong-A 範例資料 (3 筆)
     ├── seed_kong_b.py              # Kong-B 範例資料 (1 筆)
     ├── seed_kong_a_bulk.py         # Kong-A 大量資料 (1050 筆)

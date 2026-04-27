@@ -8,6 +8,24 @@
 </div>
 {% endif %}
 
+<!-- ═══════════════ 節點選擇 Landing ═══════════════ -->
+{% if node_required %}
+<div style="text-align:center; padding:4rem 1rem;">
+    <h2 style="border:none; font-size:2rem; margin-bottom:0.5rem;">📊 儀表板</h2>
+    <p style="color:#888; margin-bottom:2rem;">請選擇一個 Kong 節點以開始</p>
+    <div style="display:flex; flex-wrap:wrap; gap:1.2rem; justify-content:center;">
+        {% for name, url in nodes.items() %}
+        <a href="/?node={{ name }}" style="text-decoration:none;">
+            <div class="card" style="min-width:260px; max-width:340px; cursor:pointer; transition:all 0.2s; text-align:left;" onmouseover="this.style.borderColor='#5dade2'; this.style.transform='translateY(-4px)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.05)'; this.style.transform='none'">
+                <h3 style="margin:0 0 0.5rem;">🌐 {{ name }}</h3>
+                <p class="mono" style="color:#888; margin:0; font-size:0.85em; word-break:break-all;">{{ url }}</p>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+
 <!-- ═══ 頂部控制列 ═══ -->
 <div class="node-bar">
     <form action="/" method="get" style="margin:0; display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
@@ -28,9 +46,11 @@
         </select>
         <button type="submit" style="margin:0;">🔍 查看 / 比較</button>
     </form>
-    <div style="display:flex; gap:0.5rem; align-items:center;">
+    <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
         {% if kong_info %}<span class="mono">Kong {{ kong_info.version }}</span>{% endif %}
         <a href="/export?node={{ current_node }}" target="_blank" style="font-size:0.85em;">📥 匯出 JSON</a>
+        <button onclick="openCreateModal('service')" style="background:#2b8a3e; border-color:#2b8a3e; font-size:0.85em;">➕ 建立 Service</button>
+        <button onclick="openCreateModal('route')" style="background:#1971c2; border-color:#1971c2; font-size:0.85em;">➕ 建立 Route</button>
     </div>
 </div>
 
@@ -77,29 +97,35 @@
 {% endif %}
 
 <!-- ═══════════════ Services ═══════════════ -->
-<div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 0.5rem;">
+<div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 0.5rem; flex-wrap:wrap; gap:0.5rem;">
     <h2 style="margin:0;">📦 Services ({{ services | length }}) — {{ current_node }}</h2>
-    <input type="text" id="tableSearch" placeholder="🔍 搜尋名稱、Host、Path..." onkeyup="filterTable()" style="width:350px; padding:0.4rem; border-radius:6px; border:1px solid #5dade2; background: rgba(0,0,0,0.3); color:#fff;">
+    <div style="display:flex; gap:0.5rem; align-items:center;">
+        <button id="btnNoRoute" onclick="toggleNoRouteFilter()" style="padding:0.4rem 0.8rem; border-radius:6px; border:1px solid #e67e22; background:transparent; color:#e67e22; cursor:pointer; font-size:0.85em; white-space:nowrap; transition: all 0.2s;" title="只顯示沒有 Route 的 Service">🚫 無 Route</button>
+        <input type="text" id="tableSearch" placeholder="🔍 搜尋名稱、Host、Path..." onkeyup="filterTable()" style="width:350px; padding:0.4rem; border-radius:6px; border:1px solid #5dade2; background: rgba(0,0,0,0.3); color:#fff;">
+    </div>
 </div>
 
 <div style="overflow-x:auto;">
     <table id="servicesTable">
         <thead><tr>
             <th>Name</th><th>Protocol</th><th>Host</th><th>Port</th><th>Path</th>
-            <th>Retries</th><th>Timeout (C/W/R)</th><th>Tags</th><th>On</th><th>Routes</th><th>操作</th>
+            <th>Tags</th><th>On</th><th>Routes</th><th>操作</th>
         </tr></thead>
         <tbody>
         {% for s in services %}
         {% set search_text = (s.name or '') ~ ' ' ~ (s.host or '') ~ ' ' ~ (s.path or '') %}
         {% for r in s._routes %}{% set search_text = search_text ~ ' ' ~ (r.name or '') ~ ' ' ~ (r.paths|join(' ') if r.paths else '') %}{% endfor %}
-        <tr class="svc-row" data-search="{{ search_text | lower }}">
-            <td><strong>{{ s.name or '-' }}</strong></td>
+        <tr class="svc-row" data-search="{{ search_text | lower }}" data-routes="{{ s._routes | length if s._routes else 0 }}">
+            <td>
+                <strong>{{ s.name or '-' }}</strong>
+                <br>
+                <span class="mono" style="font-size:0.7em; color:#888;">{{ s.id }}</span>
+                <button type="button" onclick="navigator.clipboard.writeText('{{ s.id }}'); alert('已複製 ID')" style="background:transparent; border:none; padding:0 0 0 4px; cursor:pointer; font-size:0.9em;" title="複製 ID">📋</button>
+            </td>
             <td>{{ s.protocol }}</td>
             <td class="mono">{{ s.host }}</td>
             <td>{{ s.port }}</td>
             <td class="mono">{{ s.path or '/' }}</td>
-            <td>{{ s.retries }}</td>
-            <td class="mono" style="font-size:0.78em;">{{ s.connect_timeout }}/{{ s.write_timeout }}/{{ s.read_timeout }}</td>
             <td>{{ s.tags | join(', ') if s.tags else '-' }}</td>
             <td>{{ '✅' if s.enabled else '❌' }}</td>
             <td>
@@ -117,11 +143,12 @@
                     </select>
                     <button type="submit" class="btn-clone" title="複製 Service + Routes 到目標節點" onclick="return confirm('複製「{{ s.name }}」(含 Routes) 到所選節點？')" {% if nodes | length <= 1 %}disabled{% endif %}>📋 複製</button>
                 </form>
-                <button class="btn-fill" title="帶入 JSON 到建立區編輯" onclick='fillJson(`{{ s | tojson | forceescape }}`, "service")'>📝 帶入</button>
+                <button class="btn-fill" title="帶入 JSON 到建立視窗" onclick='fillJsonToModal(`{{ s | tojson | forceescape }}`, "service")'>📝 帶入</button>
+                <button class="btn-fill" title="為此 Service 建立 Route" onclick="openCreateRouteForService('{{ s.id }}')" style="background:#1971c2;">➕ 加 Route</button>
                 <button class="btn-fill" title="編輯此 Service 設定" onclick='editResource("service", "{{ s.id }}", `{{ s | tojson | forceescape }}`)' style="background:#8e44ad;">✏️ 編輯</button>
                 <button class="btn-danger" title="刪除此 Service" onclick="showDel('ds-{{ loop.index }}')">🗑️ 刪除</button>
                 <div id="ds-{{ loop.index }}" class="delete-confirm">
-                    <small class="danger">⚠️ 刪除 <strong>{{ s.name }}</strong>？</small><br>
+                    <small class="danger">⚠️ 刪除 <strong>{{ s.name }}</strong>？此操作無法撤銷。</small><br>
                     <form action="/service/delete" method="post" style="margin:0; display:inline;">
                         <input type="hidden" name="target_node" value="{{ current_node }}">
                         <input type="hidden" name="service_id" value="{{ s.id }}">
@@ -143,20 +170,25 @@
         {% if s._routes %}
         {% set svc_idx = loop.index %}
         <tr id="sr-{{ svc_idx }}" class="sub-routes" style="display:none;">
-            <td colspan="11" style="padding-left:1.5rem; background:#0d1b2a;">
+            <td colspan="9" style="padding-left:1.5rem; background:#0d1b2a;">
                 <strong>🛤️ Routes:</strong>
                 <table style="font-size:0.83em; margin:0.3rem 0;">
                     <thead><tr><th>Name</th><th>Paths</th><th>Methods</th><th>Protocols</th><th>Strip</th><th>操作</th></tr></thead>
                     <tbody>
                     {% for r in s._routes %}
                     <tr>
-                        <td><strong>{{ r.name or '-' }}</strong></td>
+                        <td>
+                            <strong>{{ r.name or '-' }}</strong>
+                            <br>
+                            <span class="mono" style="font-size:0.7em; color:#888;">{{ r.id }}</span>
+                            <button type="button" onclick="navigator.clipboard.writeText('{{ r.id }}'); alert('已複製 ID')" style="background:transparent; border:none; padding:0 0 0 4px; cursor:pointer; font-size:0.9em;" title="複製 ID">📋</button>
+                        </td>
                         <td class="mono">{{ r.paths | join(', ') if r.paths else '-' }}</td>
                         <td>{{ r.methods | join(', ') if r.methods else 'ALL' }}</td>
                         <td>{{ r.protocols | join(', ') if r.protocols else '-' }}</td>
                         <td>{{ '✅' if r.strip_path else '❌' }}</td>
                         <td style="white-space:nowrap;">
-                            <button class="btn-fill" title="帶入 JSON 到建立區" onclick='fillJson(`{{ r | tojson | forceescape }}`, "route")'>📝 帶入</button>
+                            <button class="btn-fill" title="帶入 JSON 到建立視窗" onclick='fillJsonToModal(`{{ r | tojson | forceescape }}`, "route")'>📝 帶入</button>
                             <button class="btn-fill" title="編輯此 Route 設定" onclick='editResource("route", "{{ r.id }}", `{{ r | tojson | forceescape }}`)' style="background:#8e44ad;">✏️ 編輯</button>
                             <button class="btn-danger" title="刪除此 Route" onclick="showDel('dr-{{ svc_idx }}-{{ loop.index }}')">🗑️ 刪除</button>
                             <div id="dr-{{ svc_idx }}-{{ loop.index }}" class="delete-confirm">
@@ -164,7 +196,7 @@
                                     <input type="hidden" name="target_node" value="{{ current_node }}">
                                     <input type="hidden" name="route_id" value="{{ r.id }}">
                                     <input type="hidden" name="confirm" value="YES">
-                                    <small class="danger">刪除 Route「{{ r.name }}」？</small><br>
+                                    <small class="danger">刪除 Route「{{ r.name }}」？此操作無法撤銷。</small><br>
                                     <button type="submit" class="btn-danger">✅ 確認</button>
                                     <button type="button" onclick="hideDel('dr-{{ svc_idx }}-{{ loop.index }}')">❌ 取消</button>
                                 </form>
@@ -178,81 +210,142 @@
         </tr>
         {% endif %}
         {% else %}
-        <tr><td colspan="11">目前沒有 Service</td></tr>
+        <tr><td colspan="9">目前沒有 Service</td></tr>
         {% endfor %}
         </tbody>
     </table>
 </div>
 
-<hr>
-
-<!-- ═══════════════ JSON 建立區 ═══════════════ -->
-<h2>✏️ JSON 快速建立</h2>
-<div class="flex">
-    <div class="card">
-        <h3>📦 建立 Service</h3>
-        <form action="/service/create" method="post">
-            <p><label><strong>目標節點:</strong>
-                <select name="target_node">{% for name in nodes.keys() %}<option value="{{ name }}" {% if name == current_node %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>
-            </label></p>
-            <textarea name="raw_json" rows="8" id="svc_json" placeholder='{"name":"my-svc","url":"http://example.com"}'></textarea>
-            <button type="submit">🚀 送出</button>
-        </form>
-    </div>
-    <div class="card">
-        <h3>🛤️ 建立 Route</h3>
-        <form action="/route/create" method="post">
-            <p><label><strong>目標節點:</strong>
-                <select name="target_node">{% for name in nodes.keys() %}<option value="{{ name }}" {% if name == current_node %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>
-            </label></p>
-            <p><label><strong>Service ID:</strong> <input type="text" name="service_id" id="rt_sid" placeholder="選填" class="mono"></label></p>
-            <textarea name="raw_json" rows="8" id="rt_json" placeholder='{"name":"my-route","paths":["/api/v1"]}'></textarea>
-            <button type="submit">🚀 送出</button>
-        </form>
+<!-- ═══ 建立 Service/Route 浮動視窗 ═══ -->
+<div id="createModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:100; justify-content:center; align-items:center;">
+    <div style="background:#1a1a2e; border:1px solid #333; border-radius:10px; padding:1.5rem; width:750px; max-width:90%; max-height:85vh; overflow-y:auto; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
+        <!-- Tab -->
+        <div style="display:flex; gap:0; margin-bottom:1rem;">
+            <button id="tabSvc" onclick="switchCreateTab('service')" style="flex:1; border-radius:6px 0 0 6px; padding:0.6rem; font-weight:600;">📦 建立 Service</button>
+            <button id="tabRt" onclick="switchCreateTab('route')" style="flex:1; border-radius:0 6px 6px 0; padding:0.6rem; font-weight:600;">🛤️ 建立 Route</button>
+        </div>
+        <!-- Service Form -->
+        <div id="createSvcPane">
+            <form action="/service/create" method="post" onsubmit="return validateJson('create_svc_json', '建立 Service')">
+                <p><label><strong>目標節點:</strong>
+                    <select name="target_node">{% for name in nodes.keys() %}<option value="{{ name }}" {% if name == current_node %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+                </label></p>
+                <textarea name="raw_json" rows="10" id="create_svc_json" placeholder='{"name":"my-svc","url":"http://example.com"}'></textarea>
+                <div style="display:flex; gap:0.5rem; margin-top:0.8rem;">
+                    <button type="submit" style="background:#2b8a3e; border-color:#2b8a3e;">🚀 送出</button>
+                    <button type="button" onclick="closeCreateModal()">❌ 取消</button>
+                    <span id="create_svc_err" style="color:#ff6b6b; font-size:0.85em; align-self:center;"></span>
+                </div>
+            </form>
+        </div>
+        <!-- Route Form -->
+        <div id="createRtPane" style="display:none;">
+            <form action="/route/create" method="post" onsubmit="return validateJson('create_rt_json', '建立 Route')">
+                <p><label><strong>目標節點:</strong>
+                    <select name="target_node">{% for name in nodes.keys() %}<option value="{{ name }}" {% if name == current_node %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+                </label></p>
+                <p><label><strong>Service ID:</strong> <input type="text" name="service_id" id="create_rt_sid" placeholder="選填" class="mono"></label></p>
+                <textarea name="raw_json" rows="10" id="create_rt_json" placeholder='{"name":"my-route","paths":["/api/v1"]}'></textarea>
+                <div style="display:flex; gap:0.5rem; margin-top:0.8rem;">
+                    <button type="submit" style="background:#1971c2; border-color:#1971c2;">🚀 送出</button>
+                    <button type="button" onclick="closeCreateModal()">❌ 取消</button>
+                    <span id="create_rt_err" style="color:#ff6b6b; font-size:0.85em; align-self:center;"></span>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
 <!-- ═══ 編輯 Modal ═══ -->
 <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:100; justify-content:center; align-items:center;">
-    <div style="background:#1a1a2e; border:1px solid #333; border-radius:8px; padding:1.5rem; width:700px; max-width:90%; max-height:80vh; overflow-y:auto;">
+    <div style="background:#1a1a2e; border:1px solid #333; border-radius:10px; padding:1.5rem; width:700px; max-width:90%; max-height:80vh; overflow-y:auto; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
         <h3 id="editTitle" style="margin-top:0;">✏️ 編輯</h3>
-        <form id="editForm" method="post">
+        <form id="editForm" method="post" onsubmit="return validateJson('editJsonArea', '編輯')">
             <input type="hidden" name="target_node" value="{{ current_node }}">
             <input type="hidden" name="service_id" id="editSvcId">
             <input type="hidden" name="route_id" id="editRtId">
             <textarea name="raw_json" id="editJsonArea" rows="18" style="width:100%; font-family:monospace; font-size:0.88em;"></textarea>
-            <div style="margin-top:0.8rem; display:flex; gap:0.5rem;">
+            <div style="margin-top:0.8rem; display:flex; gap:0.5rem; align-items:center;">
                 <button type="submit" class="btn-fill" style="padding:0.4rem 1rem;">💾 儲存 (PATCH)</button>
                 <button type="button" onclick="closeEdit()" style="padding:0.4rem 1rem;">❌ 取消</button>
+                <span id="edit_err" style="color:#ff6b6b; font-size:0.85em;"></span>
             </div>
         </form>
     </div>
 </div>
 
 <script>
-function fillJson(jsonStr, type) {
+// ─── Create Modal ───────────────────────────────────────────
+function openCreateModal(type) {
+    document.getElementById('createModal').style.display = 'flex';
+    switchCreateTab(type);
+}
+function closeCreateModal() {
+    document.getElementById('createModal').style.display = 'none';
+}
+function switchCreateTab(type) {
+    const isSvc = type === 'service';
+    document.getElementById('createSvcPane').style.display = isSvc ? '' : 'none';
+    document.getElementById('createRtPane').style.display = isSvc ? 'none' : '';
+    document.getElementById('tabSvc').style.background = isSvc ? '#2b8a3e' : '#16213e';
+    document.getElementById('tabRt').style.background = isSvc ? '#16213e' : '#1971c2';
+}
+
+function openCreateRouteForService(serviceId) {
+    openCreateModal('route');
+    document.getElementById('create_rt_sid').value = serviceId;
+    document.getElementById('create_rt_json').value = '{\n  "name": "",\n  "paths": [\n    "//"\n  ]\n}';
+    document.getElementById('create_rt_json').focus();
+}
+
+// ─── JSON Validation ────────────────────────────────────────
+function validateJson(textareaId, actionName) {
+    const ta = document.getElementById(textareaId);
+    const errEl = document.getElementById(textareaId.replace('json', 'err').replace('JsonArea', '_err'));
+    if (errEl) errEl.textContent = '';
+    const val = ta.value.trim();
+    if (!val) {
+        if (errEl) errEl.textContent = '⚠️ JSON 不可為空';
+        ta.focus();
+        return false;
+    }
+    try {
+        JSON.parse(val);
+        return true;
+    } catch(e) {
+        if (errEl) errEl.textContent = '⚠️ JSON 格式錯誤: ' + e.message;
+        ta.focus();
+        return false;
+    }
+}
+
+// ─── Fill JSON into Create Modal ────────────────────────────
+function fillJsonToModal(jsonStr, type) {
     try {
         const d = JSON.parse(jsonStr);
         delete d.id; delete d.created_at; delete d.updated_at; delete d._routes;
+        openCreateModal(type);
         if (type === 'service') {
-            document.getElementById('svc_json').value = JSON.stringify(d, null, 2);
-            document.getElementById('svc_json').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            document.getElementById('create_svc_json').value = JSON.stringify(d, null, 2);
         } else {
-            if (d.service && d.service.id) { document.getElementById('rt_sid').value = d.service.id; delete d.service; }
-            document.getElementById('rt_json').value = JSON.stringify(d, null, 2);
-            document.getElementById('rt_json').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (d.service && d.service.id) { document.getElementById('create_rt_sid').value = d.service.id; delete d.service; }
+            document.getElementById('create_rt_json').value = JSON.stringify(d, null, 2);
         }
     } catch(e) { alert('JSON 解析失敗: ' + e); }
 }
+
+// ─── Common helpers ─────────────────────────────────────────
 function showDel(id) { document.getElementById(id).classList.add('show'); }
 function hideDel(id) { document.getElementById(id).classList.remove('show'); }
 function toggleRoutes(id) { const el = document.getElementById(id); el.style.display = el.style.display === 'none' ? '' : 'none'; }
 
+// ─── Edit Modal ─────────────────────────────────────────────
 function editResource(type, id, jsonStr) {
     const modal = document.getElementById('editModal');
     const form = document.getElementById('editForm');
     const title = document.getElementById('editTitle');
     const area = document.getElementById('editJsonArea');
+    document.getElementById('edit_err').textContent = '';
 
     try {
         const d = JSON.parse(jsonStr);
@@ -275,42 +368,38 @@ function editResource(type, id, jsonStr) {
 }
 function closeEdit() { document.getElementById('editModal').style.display = 'none'; }
 
-// 帶入內容到編輯區
-function fillForm(mode, type, dataStr, targetId) {
-    const data = JSON.parse(dataStr);
-    const textareas = {
-        'post': {'service': 'svc_json', 'route': 'rt_json'},
-        'patch': {'service': 'patch_svc_json', 'route': 'patch_rt_json'}
-    };
-    
-    if (mode === 'patch') {
-        const idInputs = {'service': 'patch_svc_id', 'route': 'patch_rt_id'};
-        document.getElementById(idInputs[type]).value = targetId;
-        document.getElementById('patchModal').style.display = 'block';
+// ─── Filter: 無 Route ───────────────────────────────────────
+let noRouteFilterActive = false;
+function toggleNoRouteFilter() {
+    noRouteFilterActive = !noRouteFilterActive;
+    const btn = document.getElementById('btnNoRoute');
+    if (noRouteFilterActive) {
+        btn.style.background = '#e67e22';
+        btn.style.color = '#fff';
+        btn.style.borderColor = '#e67e22';
     } else {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        btn.style.background = 'transparent';
+        btn.style.color = '#e67e22';
+        btn.style.borderColor = '#e67e22';
     }
-    
-    document.getElementById(textareas[mode][type]).value = JSON.stringify(data, null, 2);
+    filterTable();
 }
 
-// 關閉 Patch Modal
-function closePatchModal() {
-    document.getElementById('patchModal').style.display = 'none';
-}
-
-// 表格即時搜尋過濾
+// ─── 表格即時搜尋過濾 (含 no-route filter) ──────────────────
 function filterTable() {
     const input = document.getElementById('tableSearch').value.toLowerCase().trim();
     const terms = input.split(/\s+/).filter(t => t);
     const rows = document.querySelectorAll('.svc-row');
-    
+
     rows.forEach(row => {
         const searchText = row.getAttribute('data-search');
-        const match = terms.length === 0 ? true : terms.every(term => searchText.includes(term));
+        const routeCount = parseInt(row.getAttribute('data-routes') || '0', 10);
+
+        let match = terms.length === 0 ? true : terms.every(term => searchText.includes(term));
+        if (noRouteFilterActive && routeCount > 0) match = false;
+
         row.style.display = match ? '' : 'none';
-        
-        // 如果這個 Service 隱藏了，也把底下展開的 Route 列表隱藏
+
         if (!match) {
             const nextRow = row.nextElementSibling;
             if (nextRow && nextRow.id && nextRow.id.startsWith('sr-')) {
@@ -319,5 +408,14 @@ function filterTable() {
         }
     });
 }
+
+// ─── ESC 關閉所有 Modal ─────────────────────────────────────
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeCreateModal();
+        closeEdit();
+    }
+});
 </script>
+{% endif %}
 {% endblock %}

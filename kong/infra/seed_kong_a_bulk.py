@@ -12,7 +12,7 @@ import httpx
 import sys
 import time
 
-KONG_ADMIN_URL = "http://localhost:8001"
+KONG_ADMIN_URL = "http://localhost:28001"
 TOTAL = 1050
 
 def main():

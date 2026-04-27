@@ -226,8 +226,18 @@ async def index(request: Request, node: str = None, diff_with: str = None, msg: 
     nodes = db_get_nodes_dict()
     if not nodes:
         return RedirectResponse(url="/nodes", status_code=303)
+
+    # ── 未選擇節點時：顯示節點選擇頁 ──
     if not node or node not in nodes:
-        node = list(nodes.keys())[0]
+        return templates.TemplateResponse(request=request, name="index.html", context={
+            "request": request, "nodes": nodes, "current_node": None,
+            "node_required": True,
+            "services": [], "routes": [], "orphan_routes": [],
+            "kong_info": None, "error_msg": None,
+            "diff_with": "", "diff_data": None,
+            "msg": msg or "", "msg_type": msg_type,
+        })
+
     current_url = nodes[node]
 
     services = []; routes = []; orphan_routes = []
@@ -264,6 +274,7 @@ async def index(request: Request, node: str = None, diff_with: str = None, msg: 
 
     return templates.TemplateResponse(request=request, name="index.html", context={
         "request": request, "nodes": nodes, "current_node": node,
+        "node_required": False,
         "services": services, "routes": routes, "orphan_routes": orphan_routes,
         "kong_info": kong_info, "error_msg": error_msg,
         "diff_with": diff_with or "", "diff_data": diff_data,
@@ -602,13 +613,36 @@ async def nodes_edit(old_name: str = Form(...), name: str = Form(...), url: str 
 
 TOPOLOGY_MAX = 100  # Mermaid 無法處理太多節點
 
+def _build_topo_groups(services):
+    """從 services 建立 domain/first-path 分組清單，供前端 group selector 使用"""
+    groups = {}  # key = "domain :: /first-path"
+    for svc in services:
+        for rt in svc.get('_routes', []):
+            hosts = rt.get('hosts') or ['*']
+            paths = rt.get('paths') or ['/']
+            for h in hosts:
+                for p in paths:
+                    first_seg = '/' + p.strip('/').split('/')[0] if p.strip('/') else '/'
+                    key = f"{h} :: {first_seg}"
+                    if key not in groups:
+                        groups[key] = {"host": h, "path": first_seg, "count": 0}
+                    groups[key]["count"] += 1
+    return sorted(groups.values(), key=lambda g: (g['host'], g['path']))
+
 @app.get("/topology", response_class=HTMLResponse)
 async def topology(request: Request, node: str = None):
     nodes = db_get_nodes_dict()
     if not nodes:
         return RedirectResponse(url="/nodes", status_code=303)
     if not node or node not in nodes:
-        node = list(nodes.keys())[0]
+        # 拓樸也需要選擇節點
+        return templates.TemplateResponse(request=request, name="topology.html", context={
+            "request": request, "nodes": nodes, "current_node": None,
+            "node_required": True,
+            "services": [], "all_services": [], "topo_groups": [],
+            "routes": [], "error_msg": None, "too_many": False,
+            "topology_max": TOPOLOGY_MAX,
+        })
     current_url = nodes[node]
 
     services = []; routes = []
@@ -621,10 +655,12 @@ async def topology(request: Request, node: str = None):
 
     too_many = len(services) > TOPOLOGY_MAX
     display_services = services[:TOPOLOGY_MAX] if too_many else services
+    topo_groups = _build_topo_groups(services)
 
     return templates.TemplateResponse(request=request, name="topology.html", context={
         "request": request, "nodes": nodes, "current_node": node,
-        "services": display_services, "all_services": services,
+        "node_required": False,
+        "services": display_services, "all_services": services, "topo_groups": topo_groups,
         "routes": routes, "error_msg": error_msg, "too_many": too_many,
         "topology_max": TOPOLOGY_MAX,
     })

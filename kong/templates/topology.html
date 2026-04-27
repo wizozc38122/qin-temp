@@ -1,5 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
+
+<!-- ═══════════════ 節點選擇 Landing ═══════════════ -->
+{% if node_required %}
+<div style="text-align:center; padding:4rem 1rem;">
+    <h2 style="border:none; font-size:2rem; margin-bottom:0.5rem;">🗺️ 拓樸圖</h2>
+    <p style="color:#888; margin-bottom:2rem;">請選擇一個 Kong 節點以開始</p>
+    <div style="display:flex; flex-wrap:wrap; gap:1.2rem; justify-content:center;">
+        {% for name, url in nodes.items() %}
+        <a href="/topology?node={{ name }}" style="text-decoration:none;">
+            <div class="card" style="min-width:260px; max-width:340px; cursor:pointer; transition:all 0.2s; text-align:left;" onmouseover="this.style.borderColor='#5dade2'; this.style.transform='translateY(-4px)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.05)'; this.style.transform='none'">
+                <h3 style="margin:0 0 0.5rem;">🌐 {{ name }}</h3>
+                <p class="mono" style="color:#888; margin:0; font-size:0.85em; word-break:break-all;">{{ url }}</p>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+
 <div class="node-bar">
     <form action="/topology" method="get" style="margin:0; display:flex; align-items:center; gap:0.6rem;">
         <label style="margin:0;"><strong>🌐 節點:</strong></label>
@@ -9,13 +28,36 @@
             {% endfor %}
         </select>
     </form>
-    <div style="flex:1; display:flex; justify-content:flex-end;">
+    <div style="flex:1; display:flex; justify-content:flex-end; gap:0.5rem; align-items:center; flex-wrap:wrap;">
          <input type="text" id="topoSearch" placeholder="🔍 搜尋名稱、Host 或 Path..." onkeyup="handleSearch()" style="width:300px; padding:0.5rem; border-radius:20px;">
     </div>
 </div>
 
 <h2>🗺️ 互動式拓樸圖 — {{ current_node }}</h2>
-<p>使用滑鼠滾輪縮放，拖動節點調整版面。點擊節點可查看詳細資訊。</p>
+
+<!-- ═══ Group Selector ═══ -->
+{% if topo_groups %}
+<div style="margin-bottom:1rem; background:rgba(22,33,62,0.4); padding:1rem; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+    <div style="display:flex; align-items:center; gap:0.8rem; margin-bottom:0.5rem;">
+        <strong style="white-space:nowrap;">🏷️ 分組篩選 (Domain / Path):</strong>
+        <button onclick="topoSelectAll()" style="font-size:0.8em; padding:0.2rem 0.6rem;">全選</button>
+        <button onclick="topoDeselectAll()" style="font-size:0.8em; padding:0.2rem 0.6rem;">全不選</button>
+        <span style="color:#888; font-size:0.85em;">勾選要顯示的分組，再按下方「套用」</span>
+    </div>
+    <div id="groupCheckboxes" style="display:flex; flex-wrap:wrap; gap:0.4rem 1rem; max-height:200px; overflow-y:auto; padding:0.5rem 0;">
+        {% for g in topo_groups %}
+        <label style="display:inline-flex; align-items:center; gap:0.3rem; font-size:0.85em; cursor:pointer; white-space:nowrap; color:#ccc;">
+            <input type="checkbox" class="topo-group-cb" value="{{ g.host }}::{{ g.path }}" style="accent-color:#5dade2;">
+            <span class="mono">{{ g.host }}{{ g.path }}</span>
+            <span style="color:#888; font-size:0.8em;">({{ g.count }})</span>
+        </label>
+        {% endfor %}
+    </div>
+    <button onclick="applyGroupFilter()" style="margin-top:0.5rem; background:#2980b9; border-color:#2980b9;">🔄 套用篩選</button>
+</div>
+{% endif %}
+
+<p style="color:#888; font-size:0.9em;">使用滑鼠滾輪縮放，拖動節點調整版面。點擊節點可查看詳細資訊。</p>
 
 {% if error_msg %}
 <div class="error-box">{{ error_msg }}</div>
@@ -40,11 +82,25 @@ let network = null;
 let nodes = new vis.DataSet();
 let edges = new vis.DataSet();
 
+// 取得目前勾選的 group filter
+function getActiveGroups() {
+    const cbs = document.querySelectorAll('.topo-group-cb');
+    if (cbs.length === 0) return null; // 沒有 group → 不篩選
+    const active = new Set();
+    cbs.forEach(cb => { if (cb.checked) active.add(cb.value); });
+    return active;
+}
+
+function topoSelectAll() { document.querySelectorAll('.topo-group-cb').forEach(cb => cb.checked = true); }
+function topoDeselectAll() { document.querySelectorAll('.topo-group-cb').forEach(cb => cb.checked = false); }
+function applyGroupFilter() { buildGraph(document.getElementById('topoSearch').value); }
+
 function buildGraph(filter = '') {
     nodes.clear();
     edges.clear();
     const f = filter.toLowerCase().trim();
     const searchTerms = f.split(/\s+/).filter(t => t);
+    const activeGroups = getActiveGroups();
 
     let hostCount = 0;
     let svcCount = 0;
@@ -64,24 +120,35 @@ function buildGraph(filter = '') {
         
         const svcSearchText = `${svcLabel} ${svcUrl}`.toLowerCase();
         
-        // 檢查此 Service 底下的 Routes
         const relevantRoutes = (svc._routes || []).filter(rt => {
             const rtSearchText = `${rt.name || ''} ${(rt.paths || []).join(' ')} ${(rt.hosts || []).join(' ')} ${svcSearchText}`.toLowerCase();
-            // 如果搜尋框有字，確保所有 keyword 都符合 (AND 邏輯)
             if (searchTerms.length > 0) {
-                return searchTerms.every(term => rtSearchText.includes(term));
+                if (!searchTerms.every(term => rtSearchText.includes(term))) return false;
+            }
+            // Group filter
+            if (activeGroups !== null) {
+                const rtHosts = (rt.hosts && rt.hosts.length > 0) ? rt.hosts : ['*'];
+                const rtPaths = (rt.paths && rt.paths.length > 0) ? rt.paths : ['/'];
+                let groupMatch = false;
+                for (const h of rtHosts) {
+                    for (const p of rtPaths) {
+                        const firstSeg = '/' + (p.replace(/^\//, '').split('/')[0] || '');
+                        if (activeGroups.has(`${h}::${firstSeg}`)) { groupMatch = true; break; }
+                    }
+                    if (groupMatch) break;
+                }
+                if (!groupMatch) return false;
             }
             return true;
         });
 
-        // 檢查 Service 本身 (如果它沒有 Route，或者即使有 Route，Service 名字有對上)
         let svcMatches = true;
         if (searchTerms.length > 0) {
             svcMatches = searchTerms.every(term => svcSearchText.includes(term));
         }
 
-        // 如果連 Service 都沒中，且底下也沒有符合的 Route，就跳過渲染
         if (searchTerms.length > 0 && !svcMatches && relevantRoutes.length === 0) return;
+        if (activeGroups !== null && relevantRoutes.length === 0) return;
 
         // 添加 Service 節點 (Level 3)
         if (!svcNodes.has(svcId)) {
@@ -99,7 +166,6 @@ function buildGraph(filter = '') {
         }
 
         if (relevantRoutes.length === 0) {
-            // 無路由的 Service 直接連到 Root 做警告
             edges.add({ from: 'root', to: svcId, dashes: true, color: '#e74c3c', label: '孤兒' });
         } else {
             relevantRoutes.forEach(rt => {
@@ -107,7 +173,6 @@ function buildGraph(filter = '') {
                 
                 rtHosts.forEach(host => {
                     const hostId = `host-${host}`;
-                    // 添加 Host 節點 (Level 1)
                     if (!hostNodes.has(hostId)) {
                         nodes.add({
                             id: hostId,
@@ -123,9 +188,8 @@ function buildGraph(filter = '') {
                         hostCount++;
                     }
 
-                    // 添加 Route(Path) 節點 (Level 2)
                     const pathLabel = (rt.paths && rt.paths.length > 0) ? rt.paths.join(', ') : '/*';
-                    const rtId = `rt-${rt.id}-${host}`; // 以防不同 host 共用 route
+                    const rtId = `rt-${rt.id}-${host}`;
                     if (!rtNodes.has(rtId)) {
                         nodes.add({
                             id: rtId,
@@ -137,7 +201,6 @@ function buildGraph(filter = '') {
                             level: 2
                         });
                         
-                        // Host -> Route
                         edges.add({
                             from: hostId,
                             to: rtId,
@@ -148,7 +211,6 @@ function buildGraph(filter = '') {
                         rtCount++;
                     }
 
-                    // Route -> Service
                     edges.add({
                         from: rtId,
                         to: svcId,
@@ -170,7 +232,7 @@ function buildGraph(filter = '') {
         const options = {
             layout: {
                 hierarchical: {
-                    direction: 'LR', // Left to Right
+                    direction: 'LR',
                     sortMethod: 'directed',
                     levelSeparation: 350,
                     nodeSpacing: 80,
@@ -188,13 +250,13 @@ function buildGraph(filter = '') {
                 hoverWidth: 3,
                 smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.6 }
             },
-            physics: false, // 階層圖不需要物理引擎，這樣位置才會固定
+            physics: false,
             interaction: {
                 hover: true,
                 hoverConnectedEdges: true,
                 tooltipDelay: 100,
                 navigationButtons: true,
-                keyboard: false // 關閉鍵盤控制，避免干擾搜尋框輸入 (如 '-' 號)
+                keyboard: false
             }
         };
         network = new vis.Network(container, data, options);
@@ -228,4 +290,5 @@ buildGraph();
     box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
 }
 </style>
+{% endif %}
 {% endblock %}

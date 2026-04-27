@@ -5,7 +5,7 @@
 import httpx
 import time
 
-KONG_ADMIN_URL = "http://localhost:8001"
+KONG_ADMIN_URL = "http://localhost:28001"
 
 def create_service(name, url):
     print(f"  [Service] Creating '{name}'...")
