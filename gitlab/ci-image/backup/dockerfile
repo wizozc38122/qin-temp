@@ -1,0 +1,65 @@
+# ============================================================
+# God CI Image — 終極輕量純淨版 (Zero Image COPY)
+# ============================================================
+# 遠端主機無網路，且不依賴其他外部 Docker Image
+# 做法：
+#   1. 遠端主機只需要預先存在 mcr.microsoft.com/dotnet/sdk:8.0-jammy 
+#   2. 其他依賴全靠本地下載好的 tar.gz 二進位檔
+#   3. 用 tar 解壓縮，速度極快，無多餘垃圾檔案
+# ============================================================
+
+# 這是我們唯一的基底 (遠端主機需事先 load 或 pull 這個 image)
+FROM mcr.microsoft.com/dotnet/sdk:8.0-jammy
+
+ENV TZ=Asia/Taipei
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENV DOTNET_NOLOGO=1
+
+# ----------------------------------------------------------
+# ☕ 1. 裝入 Java 17
+# ----------------------------------------------------------
+# 將外部的 tar.gz 複製進來並解壓，省去 COPY --from 跨 layer 複製小檔案的耗時
+COPY binaries/openjdk-17-jre.tar.gz /tmp/
+RUN mkdir -p /opt/java/openjdk \
+    && tar -xzf /tmp/openjdk-17-jre.tar.gz -C /opt/java/openjdk --strip-components=1 \
+    && rm /tmp/openjdk-17-jre.tar.gz
+
+ENV JAVA_HOME="/opt/java/openjdk"
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# ----------------------------------------------------------
+# 🟣 2. 裝入 .NET 5.0 SDK
+# ----------------------------------------------------------
+COPY binaries/dotnet-sdk-5.0.tar.gz /tmp/
+RUN tar -xzf /tmp/dotnet-sdk-5.0.tar.gz -C /usr/share/dotnet \
+    && rm /tmp/dotnet-sdk-5.0.tar.gz
+
+# ----------------------------------------------------------
+# 🟣 3. 裝入 .NET 3.1 SDK
+# ----------------------------------------------------------
+COPY binaries/dotnet-sdk-3.1.tar.gz /tmp/
+RUN tar -xzf /tmp/dotnet-sdk-3.1.tar.gz -C /usr/share/dotnet \
+    && rm /tmp/dotnet-sdk-3.1.tar.gz
+
+# ----------------------------------------------------------
+# 🔧 4. 離線安裝 SonarScanner
+# ----------------------------------------------------------
+COPY binaries/dotnet-sonarscanner.nupkg /tmp/
+RUN dotnet tool install --global dotnet-sonarscanner \
+        --add-source /tmp \
+        --ignore-failed-sources \
+    && rm /tmp/dotnet-sonarscanner.nupkg \
+    && dotnet nuget locals all --clear
+
+ENV PATH="${PATH}:/root/.dotnet/tools"
+
+# ----------------------------------------------------------
+# 🏁 最終設定與驗證
+# ----------------------------------------------------------
+WORKDIR /workspace
+
+RUN echo "=== God CI Image ===" \
+    && java -version 2>&1 | head -1 \
+    && dotnet --list-sdks \
+    && dotnet-sonarscanner --version 2>&1 || true \
+    && echo "===================="

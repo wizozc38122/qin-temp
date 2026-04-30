@@ -1,0 +1,1 @@
+Roslyn version: 4.11.0.0Language version: CSharp8!Concurrent execution: enabledokFile '/workspace/obj/Release/netcoreapp3.1/SampleDotNetProject.AssemblyInfo.cs' was recognized as generatedzvFile '/workspace/obj/Release/netcoreapp3.1/.NETCoreApp,Version=v3.1.AssemblyAttributes.cs' was recognized as generated

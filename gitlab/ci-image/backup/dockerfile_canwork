@@ -1,0 +1,29 @@
+# 1. 使用純淨的 Ubuntu 22.04 作為基底
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Taipei
+
+# 2. 安裝系統基礎依賴與 Java (Sonar/Mend 的底層依賴)
+RUN apt-get update && apt-get install -y \
+    curl wget unzip git tar jq \
+    ca-certificates apt-transport-https \
+    libc6 libgcc-s1 libgssapi-krb5-2 libssl3 libstdc++6 zlib1g \
+    openjdk-17-jre \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. 安裝 .NET 環境 (3.1 / 5.0 / 8.0)
+ENV DOTNET_ROOT="/root/.dotnet"
+ENV PATH="${PATH}:${DOTNET_ROOT}:${DOTNET_ROOT}/tools"
+
+RUN curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh \
+    && chmod +x dotnet-install.sh \
+    && ./dotnet-install.sh --channel 8.0 \
+    && ./dotnet-install.sh --channel 5.0 \
+    && ./dotnet-install.sh --channel 3.1 \
+    && rm dotnet-install.sh
+
+# 4. 安裝全域工具: SonarScanner for .NET
+RUN dotnet tool install --global dotnet-sonarscanner
+
+WORKDIR /workspace

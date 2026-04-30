@@ -1,0 +1,6 @@
+projectKey=SampleDotNetProject
+serverUrl=http://host.docker.internal:9000
+serverVersion=26.4.0.121862
+dashboardUrl=http://host.docker.internal:9000/dashboard?id=SampleDotNetProject
+ceTaskId=18901520-422a-46c0-82c8-7878df3abf04
+ceTaskUrl=http://host.docker.internal:9000/api/ce/task?id=18901520-422a-46c0-82c8-7878df3abf04

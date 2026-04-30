@@ -1,0 +1,15 @@
+﻿/workspace/Program.cs
+/workspace/obj/Release/netcoreapp3.1/.NETCoreApp,Version=v3.1.AssemblyAttributes.cs
+/workspace/obj/Release/netcoreapp3.1/SampleDotNetProject.AssemblyInfo.cs
+/workspace/PublishOutput/PublishOutput/web.config
+/workspace/PublishOutput/web.config
+/workspace/PublishOutput/PublishOutput/SampleDotNetProject.deps.json
+/workspace/PublishOutput/PublishOutput/SampleDotNetProject.runtimeconfig.json
+/workspace/PublishOutput/SampleDotNetProject.deps.json
+/workspace/PublishOutput/SampleDotNetProject.runtimeconfig.json
+/workspace/Dockerfile
+/workspace/PublishOutput/SampleDotNetProject
+/workspace/PublishOutput/SampleDotNetProject.dll
+/workspace/PublishOutput/SampleDotNetProject.pdb
+/workspace/README.md
+/workspace/run_test.sh

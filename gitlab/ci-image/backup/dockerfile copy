@@ -1,0 +1,45 @@
+# ==========================================
+# 資源收集階段 (去各個官方 Image 拿檔案)
+# ==========================================
+
+# 1. 取得官方 Java 17 (基於 Ubuntu 22.04 Jammy)
+FROM eclipse-temurin:17-jre-jammy AS java_base
+
+# 2. 取得官方 .NET 5.0 SDK
+FROM mcr.microsoft.com/dotnet/sdk:5.0-focal AS dotnet5
+
+# 3. 取得官方 .NET 3.1 SDK
+FROM mcr.microsoft.com/dotnet/sdk:3.1-focal AS dotnet3
+
+
+# ==========================================
+# 最終組裝階段 (這才是最終產出的 Image)
+# ==========================================
+
+# 4. 直接使用微軟官方的 .NET 8.0 SDK 作為基底
+# 好處：微軟已經幫你把 Ubuntu 22.04 加上所有 .NET 需要的底層依賴 (libssl, libc6 等) 都裝好了，完全不需要 apt-get
+FROM mcr.microsoft.com/dotnet/sdk:8.0-jammy
+
+ENV TZ=Asia/Taipei
+
+# 5. 把 Java 17 複製過來並設定環境變數
+COPY --from=java_base /opt/java/openjdk /opt/java/openjdk
+ENV JAVA_HOME="/opt/java/openjdk"
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# 6. 把 .NET 5.0 與 3.1 複製過來
+# 技巧：Docker 的 COPY 指令遇到同名資料夾時會「合併 (Merge)」而非覆蓋。
+# 只複製 sdk 與 shared，略過不需要的 templates/packs 加快速度
+COPY --from=dotnet5 /usr/share/dotnet/sdk     /usr/share/dotnet/sdk
+COPY --from=dotnet5 /usr/share/dotnet/shared  /usr/share/dotnet/shared
+COPY --from=dotnet3 /usr/share/dotnet/sdk     /usr/share/dotnet/sdk
+COPY --from=dotnet3 /usr/share/dotnet/shared  /usr/share/dotnet/shared
+
+# 7. 安裝 SonarScanner
+# 注意：這一步走的是 NuGet 的網路通訊埠，而非 APT。
+RUN dotnet tool install --global dotnet-sonarscanner \
+    && dotnet nuget locals all --clear
+
+ENV PATH="${PATH}:/root/.dotnet/tools"
+
+WORKDIR /workspace

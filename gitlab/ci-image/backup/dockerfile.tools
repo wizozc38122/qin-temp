@@ -1,0 +1,15 @@
+# ============================================================
+# God CI Tools — 預裝全域工具的輔助 Image
+# ============================================================
+# 用途：在有網路的本地 build，搬到遠端給主 Dockerfile 使用
+# 建構：docker build -f dockerfile.tools -t god-ci-tools:latest .
+# 搬運：docker save god-ci-tools:latest | gzip > god-ci-tools.tar.gz
+# 遠端：docker load < god-ci-tools.tar.gz
+# ============================================================
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0-jammy
+
+RUN dotnet tool install --global dotnet-sonarscanner \
+    && dotnet nuget locals all --clear
+
+# 工具安裝於 /root/.dotnet/tools/

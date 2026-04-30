@@ -1,0 +1,46 @@
+# ============================================================
+# God CI Image — Fastest Exporting Layers Edition
+# ============================================================
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0-jammy
+
+ENV TZ=Asia/Taipei \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1
+
+# ------------------------------------------------------------
+# ☕ Java 17 — 用 ADD 直接解壓（1 layer）
+# ------------------------------------------------------------
+RUN mkdir -p /opt/java/openjdk
+ADD binaries/openjdk-17-jre.tar.gz /opt/java/openjdk/
+
+ENV JAVA_HOME=/opt/java/openjdk
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# ------------------------------------------------------------
+# 🟣 .NET SDKs  直接 ADD 解壓（各 1 layer）
+# ------------------------------------------------------------
+ADD binaries/dotnet-sdk-5.0.tar.gz /usr/share/dotnet/
+ADD binaries/dotnet-sdk-3.1.tar.gz /usr/share/dotnet/
+
+# ------------------------------------------------------------
+# 🔧 SonarScanner（唯一一次寫大量小檔）
+# ------------------------------------------------------------
+COPY binaries/dotnet-sonarscanner.nupkg /tmp/
+
+RUN dotnet tool install --global dotnet-sonarscanner \
+        --add-source /tmp \
+        --ignore-failed-sources \
+    && rm -f /tmp/dotnet-sonarscanner.nupkg \
+    && dotnet nuget locals all --clear
+
+ENV PATH="${PATH}:/root/.dotnet/tools"
+
+# ------------------------------------------------------------
+# 🏁 Workdir & quick sanity check
+# ------------------------------------------------------------
+WORKDIR /workspace
+
+RUN java -version \
+    && dotnet --list-sdks \
+    && dotnet-sonarscanner --version || true

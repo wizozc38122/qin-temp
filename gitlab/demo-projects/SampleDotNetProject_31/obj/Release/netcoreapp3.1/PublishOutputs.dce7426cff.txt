@@ -1,0 +1,11 @@
+/publish_out/SampleDotNetProject
+/publish_out/PublishOutput/PublishOutput/web.config
+/publish_out/PublishOutput/web.config
+/publish_out/PublishOutput/PublishOutput/SampleDotNetProject.deps.json
+/publish_out/PublishOutput/PublishOutput/SampleDotNetProject.runtimeconfig.json
+/publish_out/PublishOutput/SampleDotNetProject.deps.json
+/publish_out/PublishOutput/SampleDotNetProject.runtimeconfig.json
+/publish_out/SampleDotNetProject.dll
+/publish_out/SampleDotNetProject.deps.json
+/publish_out/SampleDotNetProject.runtimeconfig.json
+/publish_out/SampleDotNetProject.pdb
