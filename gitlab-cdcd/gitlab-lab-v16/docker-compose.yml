@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:16.11.9-ce.0
+    privileged: true
+    hostname: gitlab.local
+    container_name: local-gitlab
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "22:22" 
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://gitlab.local'
+        # 額外優化：減少在地端運行時的背景資源消耗
+        prometheus_monitoring['enable'] = false
+        sidekiq['max_concurrency'] = 10
+    volumes:
+      # 🌟 改用具名卷期，由 Docker 管理，解決 Windows 權限 500 錯誤
+      - gitlab-config:/etc/gitlab
+      - gitlab-logs:/var/log/gitlab
+      - gitlab-data:/var/opt/gitlab
+    networks:
+      devops-net:
+        aliases:
+          - gitlab.local
+
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    container_name: local-runner
+    restart: always
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock' 
+      # 🌟 Runner 設定檔也建議改用具名卷期，避免註冊資訊丟失
+      - runner-config:/etc/gitlab-runner
+    depends_on:
+      - gitlab
+    networks:
+      - devops-net
+
+networks:
+  devops-net:
+    driver: bridge
+
+# 🌟 定義具名卷期
+volumes:
+  gitlab-config:
+  gitlab-logs:
+  gitlab-data:
+  runner-config:

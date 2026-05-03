@@ -1,0 +1,12 @@
+# 檔案：.gitlab-ci.yml (位於你的 .NET 應用程式專案)
+
+# 定義要傳遞給中央平台的變數
+variables:
+  LANGUAGE_TYPE: "dotnet"       # 宣告我是 .NET 專案
+  PROJECT_NAME: "my-web-api"    # 專案名稱
+
+# 🌟 核心動作：引進中央 CI 平台的總路由檔案
+include:
+  - project: 'root/ci-cd-platform'  # 替換成你中央平台的 專案群組/專案名稱
+    file: '/.gitlab-ci.yml'
+    ref: 'main'                     # 指定使用中央平台的 main 分支版本

@@ -1,0 +1,34 @@
+# 檔案：specifics/dotnet/pipeline.yml
+
+stages:
+  - build
+  - publish
+
+# ==========================================
+# 🌟 透過 Trigger 呼叫 Component (孫管線)
+# ==========================================
+Task:Dotnet_Build_Component:
+  stage: build
+  trigger:
+    include:
+      - project: 'root/ci-cd-platform'
+        file: '/specifics/dotnet/components/sonarqube-before-build.yml'  # 🌟 對應你的目錄結構
+        inputs:
+          # 在這裡明確傳入你想拆分的變數
+          dotnet_version: "8.0"
+          ci_image: "ci-image:latest"
+          sonar_host: "http://host.docker.internal:9000"
+    strategy: depend
+    forward:
+      pipeline_variables: true # 將 Root 算好的 IMAGE_TAG 等變數繼續往下傳
+
+# ==========================================
+# 🚀 後續階段
+# ==========================================
+Task:Push_Image:
+  stage: publish
+  tags: [shell]
+  script:
+    # ✅ 確保下面至少有一行有效的 echo 指令，且前面有 dash (-) 與正確縮排
+    - echo "準備推送 Image..."
+    - echo "目標：local-registry/$CI_PROJECT_NAME:$IMAGE_TAG"

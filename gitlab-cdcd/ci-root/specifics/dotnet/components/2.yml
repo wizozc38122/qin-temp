@@ -1,0 +1,61 @@
+# 檔案：specifics/dotnet/components/build-package.yml
+
+spec:
+  inputs:
+    dotnet_version:
+      type: string
+    ci_image:
+      type: string
+    sonar_host:
+      type: string
+---
+Task:Do_Build_And_Package:
+  tags:
+    - shell
+  script:
+    - echo "=== 1. 產生動態執行腳本 ==="
+    - |
+      cat << 'EOF' > run_test.sh
+      #!/bin/bash
+      set -e
+      dotnet sonarscanner begin /k:"$SONAR_PROJECT_KEY" /d:sonar.host.url="$SONAR_HOST_URL" /d:sonar.login="$SONAR_TOKEN"
+      dotnet publish -c Release -o /workspace/PublishOutput
+      dotnet sonarscanner end /d:sonar.login="$SONAR_TOKEN"
+      EOF
+      chmod +x run_test.sh
+
+    - echo "=== 2. 建立 CI 容器並注入程式碼 (避開 DooD 路徑陷阱) ==="
+    # 🌟 秘訣：用 docker create 建立一個「尚未啟動」的容器，並取得它的 ID
+    - |
+      CONTAINER_ID=$(docker create -w /workspace \
+        -e SONAR_PROJECT_KEY="$CI_PROJECT_NAME" \
+        -e SONAR_HOST_URL="$[[ inputs.sonar_host ]]" \
+        -e SONAR_TOKEN="$SONAR_TOKEN" \
+        $[[ inputs.ci_image ]] \
+        bash /workspace/run_test.sh)
+    
+    # 🌟 秘訣：透過 Docker API，把 Runner 暫存區的所有檔案直接「複製」進容器裡
+    - docker cp . $CONTAINER_ID:/workspace
+
+    - echo "=== 3. 在 CI 容器內執行編譯與掃描 ==="
+    # 啟動容器，-a 參數會把 log 同步印在 GitLab 的畫面上
+    - docker start -a $CONTAINER_ID
+
+    - echo "=== 4. 將編譯成品 (PublishOutput) 抽回 Runner ==="
+    # 🌟 秘訣：編譯完成後，把產出的 PublishOutput 資料夾「複製」回 Runner
+    - docker cp $CONTAINER_ID:/workspace/PublishOutput ./PublishOutput
+    # 清理用完的暫存容器
+    - docker rm $CONTAINER_ID
+
+    - echo "=== 5. 動態生成 Runtime Dockerfile ==="
+    - |
+      cat <<EOF > Dockerfile
+      FROM mcr.microsoft.com/dotnet/aspnet:$[[ inputs.dotnet_version ]] AS base
+      WORKDIR /app
+      COPY PublishOutput/ .
+      EXPOSE 80
+      ENTRYPOINT ["dotnet", "${CI_PROJECT_NAME}.dll"]
+      EOF
+
+    - echo "=== 6. 執行 Docker Build ==="
+    - docker build -t local-registry/$CI_PROJECT_NAME:$IMAGE_TAG .

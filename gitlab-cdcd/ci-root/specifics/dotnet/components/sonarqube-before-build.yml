@@ -1,0 +1,48 @@
+spec:
+  inputs:
+    dotnet_version:
+      type: string
+    ci_image:
+      type: string
+    sonar_host:
+      type: string
+---
+Task:Do_Build_And_Package:
+  # 因為是獨立的孫管線，不指定 stage 就會預設跑在 test 階段，這不影響外層視覺
+  tags:
+    - shell
+  script:
+    - echo "=== 1. 產生動態執行腳本 ==="
+    - |
+      cat << 'EOF' > run_test.sh
+      #!/bin/bash
+      set -e
+      dotnet sonarscanner begin /k:"$SONAR_PROJECT_KEY" /d:sonar.host.url="$SONAR_HOST_URL" /d:sonar.login="$SONAR_TOKEN"
+      dotnet publish -c Release -o /workspace/PublishOutput
+      dotnet sonarscanner end /d:sonar.login="$SONAR_TOKEN"
+      EOF
+      chmod +x run_test.sh
+
+    - echo "=== 2. 在 CI 容器內執行編譯與掃描 ==="
+    - |
+      docker run --rm \
+        -v "$(pwd):/workspace" \
+        -w "/workspace" \
+        -e SONAR_PROJECT_KEY="$CI_PROJECT_NAME" \
+        -e SONAR_HOST_URL="$[[ inputs.sonar_host ]]" \
+        -e SONAR_TOKEN="squ_95401a04f815bb77931a0efee4227789e7a8c5f1" \
+        $[[ inputs.ci_image ]] \
+        bash /workspace/run_test.sh
+
+    - echo "=== 3. 動態生成 Runtime Dockerfile ==="
+    - |
+      cat <<EOF > Dockerfile
+      FROM mcr.microsoft.com/dotnet/aspnet:$[[ inputs.dotnet_version ]] AS base
+      WORKDIR /app
+      COPY PublishOutput/ .
+      EXPOSE 80
+      ENTRYPOINT ["dotnet", "${CI_PROJECT_NAME}.dll"]
+      EOF
+
+    - echo "=== 4. 執行 Docker Build ==="
+    - docker build -t local-registry/$CI_PROJECT_NAME:$IMAGE_TAG .

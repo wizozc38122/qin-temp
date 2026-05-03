@@ -1,0 +1,11 @@
+# 檔案：你的 .NET 應用程式專案 / .gitlab-ci.yml
+
+# 1. 宣告這個專案的語言屬性 (給中央大腦 Router 派發任務用的)
+variables:
+  LANGUAGE_TYPE: "dotnet"
+
+# 2. 直接引入中央平台的「總路由大腦」
+include:
+  - project: 'root/ci-cd-platform'  # 🌟 指向你的 CI 平台專案
+    file: '/.gitlab-ci.yml'         # 🌟 指向總路由檔案
+    ref: 'main'                     # 💡 SRE 最佳實踐：鎖定 CI 平台的分支或 Tag

@@ -1,0 +1,21 @@
+# 檔案：.gitlab-ci.yml (位於 ci-cd-platform 專案)
+
+# 1. 引入剛剛寫好的頂級規則
+include:
+  - local: '/rules/workflow.yml'
+
+# 2. 定義階段 (Router 只負責派發任務，所以只有一個階段)
+stages:
+  - trigger-child-pipeline
+
+# 3. 判斷並派發給 .NET 的子管線
+Call_Dotnet_Pipeline:
+  stage: trigger-child-pipeline
+  # 🌟 透過呼叫端傳來的變數 $LANGUAGE_TYPE 來決定要不要啟動這個 Job
+  rules:
+    - if: '$LANGUAGE_TYPE == "dotnet"'
+  trigger:
+    # 這裡是指向我們剛剛設計的目錄結構中的 dotnet 子管線入口
+    include: '/dotnet/pipeline.yml'
+    # strategy: depend 代表這條子管線如果失敗，外層的狀態也會跟著亮紅燈
+    strategy: depend

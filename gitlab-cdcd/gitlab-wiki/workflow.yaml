@@ -1,0 +1,20 @@
+workflow:
+  rules:
+    # ❌ 規則 1：禁止 Merge Request 產生的 Pipeline
+    # 說明：因為推上分支時就會跑一次，MR 又會跑一次，會造成浪費。
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+
+    # 🛑 規則 2：如果 Commit 訊息包含 [skip ci]，則絕對不跑
+    - if: '$CI_COMMIT_MESSAGE =~ /\[skip ci\]/i'
+      when: never
+
+    # ✅ 規則 3：如果是推送到 main 分支，或者是打 Tag，自動執行 (always)
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_TAG'
+      when: always
+
+    # ⚠️ 規則 4：如果是其他開發分支 (例如 dev, feature/*)，必須「手動點擊」才執行
+    # 說明：這樣開發者狂推 code 時不會塞爆 Runner，等他們想測再自己按。
+    - if: '$CI_COMMIT_BRANCH'
+      when: manual
+      allow_failure: true # 手動任務不按也不會當作 Pipeline 失敗
