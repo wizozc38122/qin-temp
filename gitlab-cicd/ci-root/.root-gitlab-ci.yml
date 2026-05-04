@@ -1,0 +1,87 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - when: always
+
+variables:
+  PROJECT_SUBDIR: "."
+  CONTAINER_SUFFIX: ""
+
+stages:
+  - setup
+  - ci
+  - cd
+
+Task:Setup:
+  stage: setup
+  tags: [shell]
+  script:
+    - echo "開始進行動態變數推導..."
+    - |
+      if [ "$CI_COMMIT_BRANCH" == "main" ]; then
+        echo "DEPLOY_ENV=production" >> build.env
+        echo "IMAGE_TAG=prod-$CI_COMMIT_SHORT_SHA" >> build.env
+      else
+        echo "DEPLOY_ENV=development" >> build.env
+        echo "IMAGE_TAG=dev-$CI_COMMIT_SHORT_SHA" >> build.env
+      fi
+  artifacts:
+    reports:
+      dotenv: build.env
+
+Task:CI-Dotnet:
+  stage: ci
+  needs: ["Task:Setup"]
+  rules:
+    - if: '$LANGUAGE_TYPE == "dotnet"'
+  trigger:
+    include:
+      - project: 'root/ci-cd-platform'
+        file: '/specifics/dotnet/pipeline.yml'
+    strategy: depend
+    forward:
+      pipeline_variables: true
+
+Task:CI-Java:
+  stage: ci
+  needs: ["Task:Setup"]
+  rules:
+    - if: '$LANGUAGE_TYPE == "java"'
+  trigger:
+    include:
+      - project: 'root/ci-cd-platform'
+        file: '/specifics/java/pipeline.yml'
+    strategy: depend
+    forward:
+      pipeline_variables: true
+
+Task:CI-Node:
+  stage: ci
+  needs: ["Task:Setup"]
+  rules:
+    - if: '$LANGUAGE_TYPE == "node"'
+  trigger:
+    include:
+      - project: 'root/ci-cd-platform'
+        file: '/specifics/node/pipeline.yml'
+    strategy: depend
+    forward:
+      pipeline_variables: true
+
+Task:CD-DockerRun:
+  stage: cd
+  tags:
+    - shell
+  script:
+    - docker rm -f ${CI_PROJECT_NAME}${CONTAINER_SUFFIX} || true
+    - docker run -d --name ${CI_PROJECT_NAME}${CONTAINER_SUFFIX} local-registry/${CI_PROJECT_NAME}:${IMAGE_TAG}
+
+
+
+# TODO: 尚未實作
+# Task:CD-ArgoCD:
+#   stage: cd
+#   tags: [shell]
+#   script:
+#     - docker run -d 

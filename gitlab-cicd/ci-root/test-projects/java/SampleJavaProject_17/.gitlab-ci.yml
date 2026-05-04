@@ -1,0 +1,50 @@
+stages:
+  - build_and_scan
+  - docker_package
+
+variables:
+  # 替換為實際的 Sonar 主機與 Token
+  SONAR_HOST_URL: "http://your-sonarqube-server"
+  SONAR_TOKEN: "your-sonar-token"
+  GIT_REPO_NAME: "sample-java-web"
+  # 將 Maven 本地倉庫指到專案目錄下，方便 Gitlab CI 進行 Cache
+  MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
+
+# 宣告全局 Cache，讓每次 Pipeline 不用重新下載肥大的 Maven 依賴
+cache:
+  key: "maven-cache"
+  paths:
+    - .m2/repository
+
+build_and_sonar_scan:
+  stage: build_and_scan
+  # 這裡使用我們做好的 God-CI-Image
+  image: god-ci-image:latest 
+  script:
+    - echo "開始編譯與測試，產生覆蓋率報告..."
+    - mvn clean test
+    - echo "開始進行 SonarQube 掃描..."
+    - >
+      mvn org.sonarsource.scanner.maven:sonar-maven-plugin:5.0.0.4389:sonar
+      -Dsonar.token=${SONAR_TOKEN}
+      -Dsonar.projectKey=${GIT_REPO_NAME}
+      -Dsonar.projectVersion=${CI_COMMIT_SHORT_SHA}
+      -Dsonar.java.binaries=target/classes
+      -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+      -Dsonar.host.url=${SONAR_HOST_URL}
+    - echo "掃描完成！進行打包..."
+    - mvn -B -DskipTests clean package
+  artifacts:
+    paths:
+      - target/*.jar
+
+# 之後就可以用你提供的 Dockerfile 把編譯好的 jar 包裝成 Docker Image
+docker_package:
+  stage: docker_package
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build -t my-java-app:latest .
+  needs:
+    - build_and_sonar_scan

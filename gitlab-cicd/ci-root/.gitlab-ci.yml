@@ -1,0 +1,79 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: always
+    - when: never
+
+stages:
+  - integration-test
+  - cd
+
+
+dogfood-dotnet:
+  stage: integration-test
+  variables:
+    CI_PROJECT_NAME: sampledotnetproject
+    PROJECT_SUBDIR: test-projects/dotnet/SampleDotNetProject_8
+    IMAGE_TAG: dotnet-dogfood-$CI_COMMIT_SHORT_SHA
+  trigger:
+    include:
+      - project: 'root/ci-cd-platform'
+        file: '/specifics/dotnet/pipeline.yml'
+    strategy: depend
+    forward:
+      pipeline_variables: true
+
+dogfood-java:
+  stage: integration-test
+  variables:
+    CI_PROJECT_NAME: samplejavaproject
+    PROJECT_SUBDIR: test-projects/java/SampleJavaProject_17
+    IMAGE_TAG: java-dogfood-$CI_COMMIT_SHORT_SHA
+  trigger:
+    include:
+      - project: 'root/ci-cd-platform'
+        file: '/specifics/java/pipeline.yml'
+    strategy: depend
+    forward:
+      pipeline_variables: true
+
+dogfood-node:
+  stage: integration-test
+  variables:
+    CI_PROJECT_NAME: samplenodeproject
+    PROJECT_SUBDIR: test-projects/node/SampleNodeProject_22
+    IMAGE_TAG: node-dogfood-$CI_COMMIT_SHORT_SHA
+  trigger:
+    include:
+      - project: 'root/ci-cd-platform'
+        file: '/specifics/node/pipeline.yml'
+    strategy: depend
+    forward:
+      pipeline_variables: true
+
+# ==========================================
+# 🚀 CD：Docker Run 驗證 Image 可啟動
+# ==========================================
+dogfood-cd-dotnet:
+  stage: cd
+  needs: ["dogfood-dotnet"]
+  tags: [shell]
+  script:
+    - docker rm -f sampledotnetproject-dogfood || true
+    - docker run -d --name sampledotnetproject-dogfood local-registry/sampledotnetproject:dotnet-dogfood-${CI_COMMIT_SHORT_SHA}
+
+dogfood-cd-java:
+  stage: cd
+  needs: ["dogfood-java"]
+  tags: [shell]
+  script:
+    - docker rm -f samplejavaproject-dogfood || true
+    - docker run -d --name samplejavaproject-dogfood local-registry/samplejavaproject:java-dogfood-${CI_COMMIT_SHORT_SHA}
+
+dogfood-cd-node:
+  stage: cd
+  needs: ["dogfood-node"]
+  tags: [shell]
+  script:
+    - docker rm -f samplenodeproject-dogfood || true
+    - docker run -d --name samplenodeproject-dogfood local-registry/samplenodeproject:node-dogfood-${CI_COMMIT_SHORT_SHA}

@@ -1,0 +1,23 @@
+# 檔案：specifics/dotnet/pipeline.yml
+
+stages:
+  - build_and_push
+
+# ==========================================
+# 🌟 透過 Trigger 呼叫 Component (孫管線)
+# ==========================================
+Task:Dotnet_Build_Component:
+  stage: build_and_push
+  trigger:
+    include:
+      - project: 'root/ci-cd-platform'
+        file: '/specifics/dotnet/components/sonarqube-before-build-copy.yml' 
+        inputs:
+          dotnet_version: "8.0"
+          ci_image: "ci-image:latest"
+          sonar_host: "http://host.docker.internal:9000"
+          image_tag: "${IMAGE_TAG}"
+          src_dir: "$PROJECT_SUBDIR"
+    strategy: depend
+    forward:
+      pipeline_variables: true

@@ -1,0 +1,9 @@
+FROM gitlab/gitlab-runner:ubuntu-v16.11.3
+
+# 安裝 Docker CLI
+RUN apt-get update && \
+    apt-get install -y docker.io && \
+    usermod -aG docker gitlab-runner
+
+# 🌟 核心修正：將結尾的 main 改為 run
+ENTRYPOINT ["/usr/bin/bash", "-c", "chmod 666 /var/run/docker.sock && /usr/bin/dumb-init /entrypoint run"]

@@ -1,0 +1,79 @@
+# 檔案：specifics/java/components/maven-sonarqube-package.yml
+
+spec:
+  inputs:
+    jdk_version:
+      type: string
+    ci_image:
+      type: string
+    sonar_host:
+      type: string
+    image_tag:
+      type: string
+    src_dir:
+      type: string
+      default: "."
+---
+Task:Do_Java_Build_And_Push:
+  tags:
+    - shell
+  script:
+    - echo "=== 0. 切換至專案原始碼目錄 ==="
+    - cd $[[ inputs.src_dir ]]
+    - echo "=== 1. 產生 Maven 編譯與掃描腳本 ==="
+    - |
+      cat << 'EOF' > run_test.sh
+      #!/bin/bash
+      set -e
+      echo "--- 執行單元測試 ---"
+      mvn clean test
+      echo "--- 執行 SonarQube 掃描 ---"
+      mvn org.sonarsource.scanner.maven:sonar-maven-plugin:5.0.0.4389:sonar \
+        -Dsonar.token="$SONAR_TOKEN" \
+        -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
+        -Dsonar.java.binaries=target/classes \
+        -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
+        -Dsonar.host.url="$SONAR_HOST_URL"
+      echo "--- 執行 Maven 打包 ---"
+      mvn -B -DskipTests clean package
+      mkdir -p /workspace/PublishOutput
+      cp target/*.jar /workspace/PublishOutput/app.jar
+      EOF
+      chmod +x run_test.sh
+
+    - echo "=== 2. 建立容器並注入程式碼 (掛載 Maven 快取) ==="
+    - |
+      CONTAINER_ID=$(docker create -w /workspace \
+        -v "maven-cache:/root/.m2" \
+        -e SONAR_PROJECT_KEY="$CI_PROJECT_NAME" \
+        -e SONAR_HOST_URL="$[[ inputs.sonar_host ]]" \
+        -e SONAR_TOKEN="$SONAR_TOKEN" \
+        $[[ inputs.ci_image ]] \
+        bash /workspace/run_test.sh)
+    - docker cp . $CONTAINER_ID:/workspace
+
+    - echo "=== 3. 執行容器內部任務 ==="
+    - docker start -a $CONTAINER_ID
+
+    - echo "=== 4. 抽回成品並清理 ==="
+    - mkdir -p ./PublishOutput
+    - docker cp $CONTAINER_ID:/workspace/PublishOutput/app.jar ./PublishOutput/app.jar
+    - docker rm $CONTAINER_ID
+
+    - echo "=== 5. 動態生成 Runtime Dockerfile ==="
+    - |
+      cat <<EOF > Dockerfile
+      FROM eclipse-temurin:$[[ inputs.jdk_version ]] AS base
+      WORKDIR /app
+      ENV TZ=Asia/Taipei
+      COPY PublishOutput/app.jar /app/app.jar
+      EXPOSE 8080
+      ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+      EOF
+
+    - echo "=== 6. 封裝與推送 Image ==="
+    - docker build -t local-registry/$CI_PROJECT_NAME:$[[ inputs.image_tag ]] .
+
+    # TODO: 尚未實作
+    - echo "=== 發布映像檔 Push Image ==="
+    - echo "目標：local-registry/$CI_PROJECT_NAME:$[[ inputs.image_tag ]]"

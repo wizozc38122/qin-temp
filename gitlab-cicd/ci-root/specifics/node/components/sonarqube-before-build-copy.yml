@@ -1,0 +1,85 @@
+# 檔案：specifics/node/components/sonarqube-before-build-copy.yml
+
+spec:
+  inputs:
+    node_version:
+      type: string
+    ci_image:
+      type: string
+    sonar_host:
+      type: string
+    image_tag:
+      type: string
+    src_dir:
+      type: string
+      default: "."
+---
+Task:Do_Node_Build_And_Push:
+  tags:
+    - shell
+  script:
+    - echo "=== 0. 切換至專案原始碼目錄 ==="
+    - cd $[[ inputs.src_dir ]]
+    - echo "=== 1. 產生 Node.js (Nuxt3) 編譯與掃描腳本 ==="
+    - |
+      cat << 'EOF' > run_test.sh
+      #!/bin/bash
+      set -e
+      export NUXT_TELEMETRY_DISABLED=1
+      
+      echo "--- 安裝依賴 ---"
+      npm install
+      
+      echo "--- 執行 SonarQube 掃描 ---"
+      sonar-scanner \
+        -Dsonar.token="$SONAR_TOKEN" \
+        -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
+        -Dsonar.sources="." \
+        -Dsonar.exclusions="**/node_modules/**,**/.output/**,**/.nuxt/**" \
+        -Dsonar.host.url="$SONAR_HOST_URL" \
+        -Dsonar.javascript.lcov.reportPaths="coverage/lcov.info"
+      
+      echo "--- 執行 Nuxt 3 打包 ---"
+      npm run build
+      
+      mkdir -p /workspace/PublishOutput
+      cp -r .output/* /workspace/PublishOutput/
+      EOF
+      chmod +x run_test.sh
+
+    - echo "=== 2. 建立容器並注入程式碼 (掛載 npm 快取) ==="
+    - |
+      CONTAINER_ID=$(docker create -w /workspace \
+        -v "npm-cache:/root/.npm" \
+        -e SONAR_PROJECT_KEY="$CI_PROJECT_NAME" \
+        -e SONAR_HOST_URL="$[[ inputs.sonar_host ]]" \
+        -e SONAR_TOKEN="$SONAR_TOKEN" \
+        $[[ inputs.ci_image ]] \
+        bash /workspace/run_test.sh)
+    - docker cp . $CONTAINER_ID:/workspace
+
+    - echo "=== 3. 執行容器內部任務 ==="
+    - docker start -a $CONTAINER_ID
+
+    - echo "=== 4. 抽回成品 (.output) 並清理 ==="
+    - mkdir -p ./PublishOutput
+    - docker cp $CONTAINER_ID:/workspace/PublishOutput/. ./PublishOutput/
+    - docker rm $CONTAINER_ID
+
+    - echo "=== 5. 動態生成 Runtime Dockerfile ==="
+    - |
+      cat <<EOF > Dockerfile
+      FROM node:$[[ inputs.node_version ]] AS base
+      WORKDIR /nuxt3/server
+      ENV TZ=Asia/Taipei
+      COPY PublishOutput/ /nuxt3/
+      EXPOSE 3000
+      ENTRYPOINT ["node", "index.mjs"]
+      EOF
+
+    - echo "=== 6. 封裝與推送 Image ==="
+    - docker build -t local-registry/$CI_PROJECT_NAME:$[[ inputs.image_tag ]] .
+    
+    # TODO: 尚未實作
+    - echo "=== 發布映像檔 Push Image ==="
+    - echo "目標：local-registry/$CI_PROJECT_NAME:$[[ inputs.image_tag ]]"

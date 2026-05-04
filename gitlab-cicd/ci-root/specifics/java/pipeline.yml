@@ -1,0 +1,20 @@
+# 檔案：specifics/java/pipeline.yml
+
+stages:
+  - build_and_push
+
+Task:Java_Build_Component:
+  stage: build_and_push
+  trigger:
+    include:
+      - project: 'root/ci-cd-platform'
+        file: '/specifics/java/components/sonarqube-before-build-copy.yml'
+        inputs:
+          jdk_version: "17-jdk-alpine"
+          ci_image: "ci-image:latest"
+          sonar_host: "http://host.docker.internal:9000"
+          image_tag: "${IMAGE_TAG}"
+          src_dir: "$PROJECT_SUBDIR"
+    strategy: depend
+    forward:
+      pipeline_variables: true
