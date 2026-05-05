@@ -416,6 +416,120 @@ document.addEventListener('keydown', function(e) {
         closeEdit();
     }
 });
+
+// ─── Toast Message ──────────────────────────────────────────
+function showToast(msg, type='info') {
+    let toast = document.getElementById('ajaxToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'ajaxToast';
+        toast.style.cssText = 'position:fixed; bottom:20px; right:20px; padding:15px 25px; border-radius:8px; z-index:9999; color:#fff; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.5); opacity:0; transition:opacity 0.3s;';
+        document.body.appendChild(toast);
+    }
+    toast.style.background = type === 'success' ? '#2b8a3e' : (type === 'error' ? '#c0392b' : '#2980b9');
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+}
+
+// ─── AJAX Form Submissions ──────────────────────────────────
+document.addEventListener('submit', async function(e) {
+    const form = e.target;
+    const action = form.getAttribute('action');
+    if (!action) return;
+
+    if (action.includes('/delete') || action.includes('/edit') || action.includes('/create')) {
+        e.preventDefault();
+        
+        const submitBtn = form.querySelector('button[type="submit"]') || form.querySelector('button.btn-danger') || form.querySelector('button.btn-force');
+        let oldHtml = "";
+        if (submitBtn) {
+            oldHtml = submitBtn.innerHTML;
+            submitBtn.innerHTML = "⏳ 處理中...";
+            submitBtn.disabled = true;
+        }
+
+        const formData = new FormData(form);
+        formData.append('is_ajax', '1');
+
+        try {
+            const res = await fetch(action, {
+                method: form.method || 'POST',
+                body: formData,
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                showToast(data.message, 'success');
+                
+                // Partial DOM updates
+                if (action.includes('/service/delete')) {
+                    const row = form.closest('tr');
+                    if (row) {
+                        const nextRow = row.nextElementSibling;
+                        if (nextRow && nextRow.classList.contains('sub-routes')) nextRow.remove();
+                        row.remove();
+                    }
+                } else if (action.includes('/route/delete')) {
+                    const row = form.closest('tr');
+                    if (row) row.remove();
+                } else if (action.includes('/edit')) {
+                    closeEdit();
+                    const isSvc = action.includes('service');
+                    const targetId = isSvc ? formData.get('service_id') : formData.get('route_id');
+                    if (targetId && data.data) {
+                        const spans = document.querySelectorAll('td span.mono');
+                        for (let span of spans) {
+                            if (span.textContent.trim() === targetId) {
+                                const row = span.closest('tr');
+                                if (row) {
+                                    const tds = row.querySelectorAll('td');
+                                    if (isSvc && tds.length >= 7) {
+                                        tds[0].querySelector('strong').textContent = data.data.name || '-';
+                                        tds[1].textContent = data.data.protocol || '-';
+                                        tds[2].textContent = data.data.host || '-';
+                                        tds[3].textContent = data.data.port || '-';
+                                        tds[4].textContent = data.data.path || '/';
+                                        tds[5].textContent = data.data.tags ? data.data.tags.join(', ') : '-';
+                                        tds[6].textContent = data.data.enabled !== false ? '✅' : '❌';
+                                    } else if (!isSvc && tds.length >= 5) {
+                                        tds[0].querySelector('strong').textContent = data.data.name || '-';
+                                        tds[1].textContent = data.data.paths ? data.data.paths.join(', ') : '-';
+                                        tds[2].textContent = data.data.methods ? data.data.methods.join(', ') : 'ALL';
+                                        tds[3].textContent = data.data.protocols ? data.data.protocols.join(', ') : '-';
+                                        tds[4].textContent = data.data.strip_path !== false ? '✅' : '❌';
+                                    }
+                                    
+                                    // Update edit button's JSON payload so next edit uses new data
+                                    const editBtn = Array.from(row.querySelectorAll('button')).find(b => b.textContent.includes('編輯'));
+                                    if (editBtn) {
+                                        const type = isSvc ? "service" : "route";
+                                        const safeJson = JSON.stringify(data.data).replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+                                        editBtn.setAttribute('onclick', `editResource("${type}", "${targetId}", \`${safeJson}\`)`);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                } else if (action.includes('/create')) {
+                    closeCreateModal();
+                    // Could append row to table, or just show toast
+                }
+            } else {
+                showToast(data.message || '操作失敗', 'error');
+            }
+        } catch (err) {
+            showToast('連線錯誤: ' + err, 'error');
+        } finally {
+            if (submitBtn) {
+                submitBtn.innerHTML = oldHtml;
+                submitBtn.disabled = false;
+            }
+        }
+    }
+});
 </script>
 {% endif %}
 {% endblock %}

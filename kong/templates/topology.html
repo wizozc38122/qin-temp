@@ -33,29 +33,40 @@
     </div>
 </div>
 
-<h2>🗺️ 互動式拓樸圖 — {{ current_node }}</h2>
+<h2>🗺️ Kong 拓樸與路由清單 — {{ current_node }}</h2>
 
-<!-- ═══ Group Selector ═══ -->
+<!-- ═══ Tabs ═══ -->
+<div style="display:flex; gap:0.5rem; margin-bottom: 1rem;">
+    <button id="btnTabGraph" onclick="switchTopoTab('graph')" style="background:#2980b9; font-weight:bold; border:1px solid #5dade2;">🗺️ 互動式拓樸圖</button>
+    <button id="btnTabList" onclick="switchTopoTab('list')" style="background:transparent; font-weight:bold; border:1px solid #34495e; color:#ccc;">📄 路由對應清單</button>
+</div>
+
+<!-- ═══ Group Selector (套用於拓樸圖與清單) ═══ -->
 {% if topo_groups %}
 <div style="margin-bottom:1rem; background:rgba(22,33,62,0.4); padding:1rem; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
     <div style="display:flex; align-items:center; gap:0.8rem; margin-bottom:0.5rem;">
         <strong style="white-space:nowrap;">🏷️ 分組篩選 (Domain / Path):</strong>
-        <button onclick="topoSelectAll()" style="font-size:0.8em; padding:0.2rem 0.6rem;">全選</button>
-        <button onclick="topoDeselectAll()" style="font-size:0.8em; padding:0.2rem 0.6rem;">全不選</button>
+        <button onclick="topoSelectAll()" style="font-size:0.8em; padding:0.2rem 0.6rem; background:#1971c2;">全選</button>
+        <button onclick="topoDeselectAll()" style="font-size:0.8em; padding:0.2rem 0.6rem; background:#555;">全不選</button>
         <span style="color:#888; font-size:0.85em;">勾選要顯示的分組，再按下方「套用」</span>
     </div>
     <div id="groupCheckboxes" style="display:flex; flex-wrap:wrap; gap:0.4rem 1rem; max-height:200px; overflow-y:auto; padding:0.5rem 0;">
         {% for g in topo_groups %}
         <label style="display:inline-flex; align-items:center; gap:0.3rem; font-size:0.85em; cursor:pointer; white-space:nowrap; color:#ccc;">
-            <input type="checkbox" class="topo-group-cb" value="{{ g.host }}::{{ g.path }}" style="accent-color:#5dade2;">
+            <input type="checkbox" class="topo-group-cb" value="{{ g.host }}::{{ g.path }}" style="accent-color:#5dade2;" checked>
             <span class="mono">{{ g.host }}{{ g.path }}</span>
             <span style="color:#888; font-size:0.8em;">({{ g.count }})</span>
         </label>
         {% endfor %}
     </div>
-    <button onclick="applyGroupFilter()" style="margin-top:0.5rem; background:#2980b9; border-color:#2980b9;">🔄 套用篩選</button>
+    <button onclick="applyTopoFilter()" style="margin-top:0.5rem; background:#2980b9; border-color:#2980b9; font-weight:bold;">🔄 套用篩選</button>
 </div>
 {% endif %}
+
+<!-- ═══════════════ GRAPH VIEW ═══════════════ -->
+<div id="viewGraph">
+
+
 
 <p style="color:#888; font-size:0.9em;">使用滑鼠滾輪縮放，拖動節點調整版面。點擊節點可查看詳細資訊。</p>
 
@@ -71,6 +82,32 @@
         <div>🔵 Hosts: <span id="stat-hosts">0</span></div>
         <div>🟢 Services: <span id="stat-services">0</span></div>
         <div>🟡 Routes: <span id="stat-routes">0</span></div>
+    </div>
+</div>
+</div>
+
+<!-- ═══════════════ LIST VIEW ═══════════════ -->
+<div id="viewList" style="display:none;">
+    <div style="display:flex; justify-content:flex-end; margin-bottom:0.5rem;">
+        <button onclick="exportRoutingCSV()" style="background:#27ae60; border-color:#2ecc71;">📥 匯出為 CSV</button>
+    </div>
+    <div style="overflow-x:auto; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:1rem;">
+        <table id="routingTable" style="width:100%; border-collapse: collapse; text-align:left;">
+            <thead>
+                <tr style="border-bottom: 2px solid #5dade2;">
+                    <th style="padding:0.5rem;">外部 Domain (Host)</th>
+                    <th style="padding:0.5rem;">外部 Path</th>
+                    <th style="padding:0.5rem; text-align:center;">方向</th>
+                    <th style="padding:0.5rem;">內部 Target (Host:Port)</th>
+                    <th style="padding:0.5rem;">內部 Path</th>
+                    <th style="padding:0.5rem;">Service Name</th>
+                    <th style="padding:0.5rem;">Route Name</th>
+                </tr>
+            </thead>
+            <tbody id="routingTableBody">
+                <!-- 由 JS 填充 -->
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -91,9 +128,27 @@ function getActiveGroups() {
     return active;
 }
 
-function topoSelectAll() { document.querySelectorAll('.topo-group-cb').forEach(cb => cb.checked = true); }
-function topoDeselectAll() { document.querySelectorAll('.topo-group-cb').forEach(cb => cb.checked = false); }
-function applyGroupFilter() { buildGraph(document.getElementById('topoSearch').value); }
+function topoSelectAll() { document.querySelectorAll('.topo-group-cb').forEach(cb => cb.checked = true); applyTopoFilter(); }
+function topoDeselectAll() { document.querySelectorAll('.topo-group-cb').forEach(cb => cb.checked = false); applyTopoFilter(); }
+function applyTopoFilter() { 
+    buildGraph(document.getElementById('topoSearch').value); 
+    renderRoutingTable();
+}
+
+function switchTopoTab(tab) {
+    document.getElementById('viewGraph').style.display = tab === 'graph' ? 'block' : 'none';
+    document.getElementById('viewList').style.display = tab === 'list' ? 'block' : 'none';
+    
+    document.getElementById('btnTabGraph').style.background = tab === 'graph' ? '#2980b9' : 'transparent';
+    document.getElementById('btnTabGraph').style.color = tab === 'graph' ? '#fff' : '#ccc';
+    document.getElementById('btnTabGraph').style.borderColor = tab === 'graph' ? '#5dade2' : '#34495e';
+    
+    document.getElementById('btnTabList').style.background = tab === 'list' ? '#2980b9' : 'transparent';
+    document.getElementById('btnTabList').style.color = tab === 'list' ? '#fff' : '#ccc';
+    document.getElementById('btnTabList').style.borderColor = tab === 'list' ? '#5dade2' : '#34495e';
+
+    if (tab === 'list') renderRoutingTable();
+}
 
 function buildGraph(filter = '') {
     nodes.clear();
@@ -234,9 +289,9 @@ function buildGraph(filter = '') {
                 hierarchical: {
                     direction: 'LR',
                     sortMethod: 'directed',
-                    levelSeparation: 350,
-                    nodeSpacing: 80,
-                    treeSpacing: 100,
+                    levelSeparation: 450,
+                    nodeSpacing: 150,
+                    treeSpacing: 200,
                     parentCentralization: true
                 }
             },
@@ -269,12 +324,173 @@ let searchTimeout = null;
 function handleSearch() {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-        const val = document.getElementById('topoSearch').value;
-        buildGraph(val);
+        applyTopoFilter();
     }, 300);
 }
 
 buildGraph();
+
+// ─── 路由清單與匯出 ───
+function renderRoutingTable() {
+    const tbody = document.getElementById('routingTableBody');
+    let html = '';
+    let entries = [];
+    
+    const f = (document.getElementById('topoSearch').value || '').toLowerCase().trim();
+    const searchTerms = f.split(/\s+/).filter(t => t);
+    const activeGroups = getActiveGroups();
+    
+    servicesData.forEach(svc => {
+        const targetHost = `${svc.protocol}://${svc.host}:${svc.port}`;
+        const targetPath = svc.path || '/';
+        const svcName = svc.name || '-';
+        const svcUrl = `${svc.protocol}://${svc.host}:${svc.port}${svc.path || ''}`;
+        const svcSearchText = `${svcName} ${svcUrl}`.toLowerCase();
+        
+        let svcMatches = true;
+        if (searchTerms.length > 0) {
+            svcMatches = searchTerms.every(term => svcSearchText.includes(term));
+        }
+        
+        if (!svc._routes || svc._routes.length === 0) {
+            if (activeGroups !== null) return; // 篩選分組時不顯示孤兒
+            if (searchTerms.length > 0 && !svcMatches) return;
+            entries.push({ extHost: '無', extPath: '無', targetHost, targetPath, svcName, rtName: '-' });
+        } else {
+            svc._routes.forEach(rt => {
+                const rtName = rt.name || '-';
+                const hosts = (rt.hosts && rt.hosts.length > 0) ? rt.hosts : ['* (Any)'];
+                const paths = (rt.paths && rt.paths.length > 0) ? rt.paths : ['/*'];
+                
+                const rtSearchText = `${rtName} ${paths.join(' ')} ${hosts.join(' ')} ${svcSearchText}`.toLowerCase();
+                if (searchTerms.length > 0 && !searchTerms.every(term => rtSearchText.includes(term))) {
+                    return; // 搜尋不匹配
+                }
+                
+                // Group filter
+                if (activeGroups !== null) {
+                    let groupMatch = false;
+                    for (const h of hosts) {
+                        for (const p of paths) {
+                            const rawH = h === '* (Any)' ? '*' : h;
+                            const rawP = p === '/*' ? '/' : p;
+                            const firstSeg = '/' + (rawP.replace(/^\//, '').split('/')[0] || '');
+                            if (activeGroups.has(`${rawH}::${firstSeg}`)) { groupMatch = true; break; }
+                        }
+                        if (groupMatch) break;
+                    }
+                    if (!groupMatch) return;
+                }
+                
+                hosts.forEach(h => {
+                    paths.forEach(p => {
+                        entries.push({ extHost: h, extPath: p, targetHost, targetPath, svcName, rtName });
+                    });
+                });
+            });
+        }
+    });
+    
+    // Sort
+    entries.sort((a, b) => {
+        if (a.extHost !== b.extHost) return a.extHost.localeCompare(b.extHost);
+        return a.extPath.localeCompare(b.extPath);
+    });
+    
+    entries.forEach((e, i) => {
+        const bg = i % 2 === 0 ? 'background:rgba(255,255,255,0.02);' : '';
+        html += `<tr style="${bg} border-bottom:1px solid rgba(255,255,255,0.05);">
+            <td class="mono" style="padding:0.6rem 0.5rem; color:#f39c12; font-weight:bold;">${e.extHost}</td>
+            <td class="mono" style="padding:0.6rem 0.5rem; color:#5dade2;">${e.extPath}</td>
+            <td style="padding:0.6rem 0.5rem; text-align:center; color:#888;">➡️</td>
+            <td class="mono" style="padding:0.6rem 0.5rem; color:#2ecc71;">${e.targetHost}</td>
+            <td class="mono" style="padding:0.6rem 0.5rem; color:#2ecc71;">${e.targetPath}</td>
+            <td style="padding:0.6rem 0.5rem;">${e.svcName}</td>
+            <td style="padding:0.6rem 0.5rem; font-size:0.9em; color:#bbb;">${e.rtName}</td>
+        </tr>`;
+    });
+    
+    tbody.innerHTML = html;
+}
+
+function exportRoutingCSV() {
+    let csv = "External Domain (Host),External Path,Target Service (Host:Port),Target Path,Service Name,Route Name\n";
+    let entries = [];
+    
+    const f = (document.getElementById('topoSearch').value || '').toLowerCase().trim();
+    const searchTerms = f.split(/\s+/).filter(t => t);
+    const activeGroups = getActiveGroups();
+    
+    servicesData.forEach(svc => {
+        const targetHost = `${svc.protocol}://${svc.host}:${svc.port}`;
+        const targetPath = svc.path || '/';
+        const svcName = svc.name || '-';
+        const svcUrl = `${svc.protocol}://${svc.host}:${svc.port}${svc.path || ''}`;
+        const svcSearchText = `${svcName} ${svcUrl}`.toLowerCase();
+        
+        let svcMatches = true;
+        if (searchTerms.length > 0) {
+            svcMatches = searchTerms.every(term => svcSearchText.includes(term));
+        }
+        
+        if (!svc._routes || svc._routes.length === 0) {
+            if (activeGroups !== null) return;
+            if (searchTerms.length > 0 && !svcMatches) return;
+            entries.push({ extHost: "無", extPath: "無", targetHost, targetPath, svcName, rtName: "-" });
+        } else {
+            svc._routes.forEach(rt => {
+                const rtName = rt.name || '-';
+                const hosts = (rt.hosts && rt.hosts.length > 0) ? rt.hosts : ['* (Any)'];
+                const paths = (rt.paths && rt.paths.length > 0) ? rt.paths : ['/*'];
+                
+                const rtSearchText = `${rtName} ${paths.join(' ')} ${hosts.join(' ')} ${svcSearchText}`.toLowerCase();
+                if (searchTerms.length > 0 && !searchTerms.every(term => rtSearchText.includes(term))) {
+                    return;
+                }
+                
+                if (activeGroups !== null) {
+                    let groupMatch = false;
+                    for (const h of hosts) {
+                        for (const p of paths) {
+                            const rawH = h === '* (Any)' ? '*' : h;
+                            const rawP = p === '/*' ? '/' : p;
+                            const firstSeg = '/' + (rawP.replace(/^\//, '').split('/')[0] || '');
+                            if (activeGroups.has(`${rawH}::${firstSeg}`)) { groupMatch = true; break; }
+                        }
+                        if (groupMatch) break;
+                    }
+                    if (!groupMatch) return;
+                }
+                
+                hosts.forEach(h => {
+                    paths.forEach(p => {
+                        entries.push({ extHost: h, extPath: p, targetHost, targetPath, svcName, rtName });
+                    });
+                });
+            });
+        }
+    });
+    
+    // 依據 External Domain (Host) 和 Path 進行排序
+    entries.sort((a, b) => {
+        if (a.extHost !== b.extHost) return a.extHost.localeCompare(b.extHost);
+        return a.extPath.localeCompare(b.extPath);
+    });
+    
+    entries.forEach(e => {
+        csv += `"${e.extHost}","${e.extPath}","${e.targetHost}","${e.targetPath}","${e.svcName}","${e.rtName}"\n`;
+    });
+    
+    const bom = new Uint8Array([0xEF, 0xBB, 0xBF]); // UTF-8 BOM for Excel
+    const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `kong_routing_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
 </script>
 
 <style>

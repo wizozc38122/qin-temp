@@ -301,7 +301,7 @@ async def export_node(node: str):
 # ─── Create Service ────────────────────────────────────────────────────────
 
 @app.post("/service/create")
-async def create_service(request: Request, target_node: str = Form(...), raw_json: str = Form(...)):
+async def create_service(request: Request, target_node: str = Form(...), raw_json: str = Form(...), is_ajax: str = Form(None)):
     target_url = db_get_node_url(target_node)
     if not target_url:
         return RedirectResponse(url="/", status_code=303)
@@ -327,9 +327,11 @@ async def create_service(request: Request, target_node: str = Form(...), raw_jso
         )
         if res.status_code >= 400:
             msg = f"建立 Service 失敗 ({res.status_code}): {json.dumps(res_body, ensure_ascii=False) if isinstance(res_body, dict) else res_body}"
+            if is_ajax: return JSONResponse({"success": False, "message": msg}, status_code=400)
             return RedirectResponse(url=make_redirect(f"/?node={target_node}", msg, "error"), status_code=303)
 
     referer = request.headers.get("referer", f"/?node={target_node}")
+    if is_ajax: return JSONResponse({"success": True, "message": f"✅ Service「{resource_name}」已建立於 {target_node}", "data": res_body})
     return RedirectResponse(url=make_redirect(referer, f"✅ Service「{resource_name}」已建立於 {target_node}", "success"), status_code=303)
 
 # ─── Clone Service + Routes ────────────────────────────────────────────────
@@ -396,7 +398,7 @@ async def clone_service_with_routes(target_node: str = Form(...), raw_json: str 
 # ─── Create Route ──────────────────────────────────────────────────────────
 
 @app.post("/route/create")
-async def create_route(request: Request, target_node: str = Form(...), service_id: str = Form(None), raw_json: str = Form(...)):
+async def create_route(request: Request, target_node: str = Form(...), service_id: str = Form(None), raw_json: str = Form(...), is_ajax: str = Form(None)):
     target_url = db_get_node_url(target_node)
     if not target_url:
         return RedirectResponse(url="/", status_code=303)
@@ -423,16 +425,19 @@ async def create_route(request: Request, target_node: str = Form(...), service_i
         )
         if res.status_code >= 400:
             msg = f"建立 Route 失敗 ({res.status_code}): {json.dumps(res_body, ensure_ascii=False) if isinstance(res_body, dict) else res_body}"
+            if is_ajax: return JSONResponse({"success": False, "message": msg}, status_code=400)
             return RedirectResponse(url=make_redirect(f"/?node={target_node}", msg, "error"), status_code=303)
 
     referer = request.headers.get("referer", f"/?node={target_node}")
+    if is_ajax: return JSONResponse({"success": True, "message": f"✅ Route「{resource_name}」已建立", "data": res_body})
     return RedirectResponse(url=make_redirect(referer, f"✅ Route「{resource_name}」已建立", "success"), status_code=303)
 
 # ─── Delete Service ────────────────────────────────────────────────────────
 
 @app.post("/service/delete")
-async def delete_service(target_node: str = Form(...), service_id: str = Form(...), confirm: str = Form(...), force: str = Form("no")):
+async def delete_service(target_node: str = Form(...), service_id: str = Form(...), confirm: str = Form(...), force: str = Form("no"), is_ajax: str = Form(None)):
     if confirm != "YES":
+        if is_ajax: return JSONResponse({"success": False, "message": "未確認刪除"})
         return RedirectResponse(url=f"/?node={target_node}", status_code=303)
     target_url = db_get_node_url(target_node)
     if not target_url:
@@ -496,15 +501,18 @@ async def delete_service(target_node: str = Form(...), service_id: str = Form(..
             msg = f"刪除 Service「{resource_name}」失敗 ({res.status_code}): {err_msg}"
             if "foreign" in err_msg.lower() or "referenced" in err_msg.lower():
                 msg += " — 請使用「🔥 強制刪除」連同 Routes 一起刪除"
+            if is_ajax: return JSONResponse({"success": False, "message": msg}, status_code=400)
             return RedirectResponse(url=make_redirect(f"/?node={target_node}", msg, "error"), status_code=303)
 
+    if is_ajax: return JSONResponse({"success": True, "message": f"✅ Service「{resource_name}」已刪除", "service_id": service_id})
     return RedirectResponse(url=make_redirect(f"/?node={target_node}", f"✅ Service「{resource_name}」已刪除", "success"), status_code=303)
 
 # ─── Delete Route ──────────────────────────────────────────────────────────
 
 @app.post("/route/delete")
-async def delete_route(target_node: str = Form(...), route_id: str = Form(...), confirm: str = Form(...)):
+async def delete_route(target_node: str = Form(...), route_id: str = Form(...), confirm: str = Form(...), is_ajax: str = Form(None)):
     if confirm != "YES":
+        if is_ajax: return JSONResponse({"success": False, "message": "未確認刪除"})
         return RedirectResponse(url=f"/?node={target_node}", status_code=303)
     target_url = db_get_node_url(target_node)
     if not target_url:
@@ -537,14 +545,16 @@ async def delete_route(target_node: str = Form(...), route_id: str = Form(...), 
                 err_msg = json.loads(res.text).get("message", res.text)
             except:
                 err_msg = res.text
+            if is_ajax: return JSONResponse({"success": False, "message": f"刪除 Route 失敗: {err_msg}"}, status_code=400)
             return RedirectResponse(url=make_redirect(f"/?node={target_node}", f"刪除 Route 失敗: {err_msg}", "error"), status_code=303)
 
+    if is_ajax: return JSONResponse({"success": True, "message": f"✅ Route「{resource_name}」已刪除", "route_id": route_id})
     return RedirectResponse(url=make_redirect(f"/?node={target_node}", f"✅ Route「{resource_name}」已刪除", "success"), status_code=303)
 
 # ─── Edit Service (PATCH) ──────────────────────────────────────────────────
 
 @app.post("/service/edit")
-async def edit_service(target_node: str = Form(...), service_id: str = Form(...), raw_json: str = Form(...)):
+async def edit_service(target_node: str = Form(...), service_id: str = Form(...), raw_json: str = Form(...), is_ajax: str = Form(None)):
     target_url = db_get_node_url(target_node)
     if not target_url:
         return RedirectResponse(url="/", status_code=303)
@@ -566,13 +576,15 @@ async def edit_service(target_node: str = Form(...), service_id: str = Form(...)
             url=req_url, method="PATCH", payload=payload,
             response_status=res.status_code, response_body=res_body)
         if res.status_code >= 400:
+            if is_ajax: return JSONResponse({"success": False, "message": f"編輯失敗: {res_body}"}, status_code=400)
             return RedirectResponse(url=make_redirect(f"/?node={target_node}", f"編輯失敗: {res_body}", "error"), status_code=303)
+    if is_ajax: return JSONResponse({"success": True, "message": f"✅ Service「{resource_name}」已更新", "data": res_body})
     return RedirectResponse(url=make_redirect(f"/?node={target_node}", f"✅ Service「{resource_name}」已更新", "success"), status_code=303)
 
 # ─── Edit Route (PATCH) ───────────────────────────────────────────────────
 
 @app.post("/route/edit")
-async def edit_route(target_node: str = Form(...), route_id: str = Form(...), raw_json: str = Form(...)):
+async def edit_route(target_node: str = Form(...), route_id: str = Form(...), raw_json: str = Form(...), is_ajax: str = Form(None)):
     target_url = db_get_node_url(target_node)
     if not target_url:
         return RedirectResponse(url="/", status_code=303)
@@ -593,7 +605,9 @@ async def edit_route(target_node: str = Form(...), route_id: str = Form(...), ra
             url=req_url, method="PATCH", payload=payload,
             response_status=res.status_code, response_body=res_body)
         if res.status_code >= 400:
+            if is_ajax: return JSONResponse({"success": False, "message": f"編輯失敗: {res_body}"}, status_code=400)
             return RedirectResponse(url=make_redirect(f"/?node={target_node}", f"編輯失敗: {res_body}", "error"), status_code=303)
+    if is_ajax: return JSONResponse({"success": True, "message": f"✅ Route「{resource_name}」已更新", "data": res_body})
     return RedirectResponse(url=make_redirect(f"/?node={target_node}", f"✅ Route「{resource_name}」已更新", "success"), status_code=303)
 
 # ─── Node Edit ─────────────────────────────────────────────────────────────
